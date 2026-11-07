@@ -40,6 +40,7 @@ func defaultAliases() map[string]string {
 	return map[string]string{
 		tagEmail: tagEmailRules,
 		tagToken: tagTokenRules,
+		tagURL:   tagURLRules,
 	}
 }
 

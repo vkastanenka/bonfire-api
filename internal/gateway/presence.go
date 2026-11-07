@@ -11,7 +11,6 @@ const (
 	PresenceOnline
 	PresenceOffline
 	PresenceIdle
-	PresenceBusy
 	PresenceDND
 	PresenceInvisible
 	presenceMax
@@ -22,7 +21,6 @@ var presenceNames = [...]string{
 	PresenceOnline:    "ONLINE",
 	PresenceOffline:   "OFFLINE",
 	PresenceIdle:      "IDLE",
-	PresenceBusy:      "BUSY",
 	PresenceDND:       "DND",
 	PresenceInvisible: "INVISIBLE",
 }
@@ -48,7 +46,7 @@ func (p Presence) IsValid() bool {
 }
 
 func (p Presence) IsPreferred() bool {
-	return p.IsIdle() || p.IsBusy() || p.IsDND()
+	return p.IsIdle() || p.IsDND() || p.IsInvisible()
 }
 
 func (p Presence) Int() int {
@@ -68,7 +66,6 @@ func (p Presence) String() string {
 func (p Presence) IsOnline() bool    { return p == PresenceOnline }
 func (p Presence) IsOffline() bool   { return p == PresenceOffline }
 func (p Presence) IsIdle() bool      { return p == PresenceIdle }
-func (p Presence) IsBusy() bool      { return p == PresenceBusy }
 func (p Presence) IsDND() bool       { return p == PresenceDND }
 func (p Presence) IsInvisible() bool { return p == PresenceInvisible }
 

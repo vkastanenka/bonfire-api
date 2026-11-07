@@ -14,7 +14,7 @@ const (
 	tagUsernameRules = "min=3,max=32,alphanum"
 
 	tagPreferredPresence      = "user_preferred_presence"
-	tagPreferredPresenceRules = "oneof=4 5 6"
+	tagPreferredPresenceRules = "oneof=3 4 5"
 
 	tagPreferredPresenceDuration      = "user_preferred_presence_duration"
 	tagPreferredPresenceDurationRules = "oneof=1 2 3 4 5 6"

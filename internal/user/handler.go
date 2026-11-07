@@ -231,6 +231,7 @@ func (h *Handler) disable(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	httpio.CookieClearRefreshToken(w)
 	httpio.RespondNoContent(w)
 	return nil
 }
@@ -258,6 +259,7 @@ func (h *Handler) scheduleDelete(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	httpio.CookieClearRefreshToken(w)
 	httpio.RespondNoContent(w)
 	return nil
 }

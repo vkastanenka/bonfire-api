@@ -27,6 +27,11 @@ func ErrCredentialsInvalid() *errs.Error {
 		FieldViolation("password", "Invalid email or password.", "INVALID_CREDENTIALS")
 }
 
+func ErrSessionIDInvalid() *errs.Error {
+	return errs.InvalidArgument("Invalid session ID format.").
+		FieldViolation("id", "Invalid ID.", "INVALID_ID")
+}
+
 func ErrIDGenerateFailed() *errs.Error {
 	return errs.Internal("Failed to generate ID.").
 		Reason(ErrReasonIDGenerateFailed)

@@ -63,8 +63,8 @@ func (h *Handler) PrintTicket(w http.ResponseWriter, r *http.Request) error {
 
 // ServeWSQuery defines the required query parameters extracted during the WebSocket handshake.
 type ServeWSQuery struct {
-	Ticket   uuid.UUID `form:"ticket" validate:"required"`
-	Presence Presence  `form:"presence" validate:"required"`
+	Ticket   string `query:"ticket" validate:"required"`
+	Presence string `query:"presence" validate:"required"`
 }
 
 // ServeWS validates incoming query parameters, punches the connection ticket, upgrades the HTTP
@@ -75,7 +75,17 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
-	userID, sessionID, err := h.service.PunchTicket(r.Context(), query.Ticket)
+	ticket, err := uuid.Parse(query.Ticket)
+	if err != nil {
+		return ErrTicketInvalid().Wrap(err)
+	}
+
+	presence, err := ParsePresenceString(query.Presence)
+	if err != nil {
+		return err
+	}
+
+	userID, sessionID, err := h.service.PunchTicket(r.Context(), ticket)
 	if err != nil {
 		return err
 	}
@@ -86,7 +96,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	client := NewClient(context.Background(), userID, sessionID, h.hub, conn)
-	h.hub.RegisterClient(client, query.Presence)
+	h.hub.RegisterClient(client, presence)
 	client.StartPumps()
 
 	return nil

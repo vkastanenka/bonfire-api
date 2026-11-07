@@ -33,7 +33,7 @@ CREATE TABLE users(
     disabled_at timestamptz,
     delete_scheduled_at timestamptz,
     preferred_presence_until timestamptz,
-    preferred_presence smallint CONSTRAINT preferred_presence_valid CHECK (preferred_presence IN (4, 5, 6)),
+    preferred_presence smallint CONSTRAINT preferred_presence_valid CHECK (preferred_presence IN (3, 4, 5)),
     email citext NOT NULL CONSTRAINT users_email_key UNIQUE CONSTRAINT email_length CHECK (char_length(email) BETWEEN 3 AND 255),
     username citext NOT NULL CONSTRAINT users_username_key UNIQUE CONSTRAINT username_length CHECK (char_length(username) BETWEEN 3 AND 32) CONSTRAINT username_valid CHECK (username NOT IN ('admin', 'root', 'support', 'system', 'moderator', 'bonfire')),
     display_name citext NOT NULL CONSTRAINT display_name_length CHECK (char_length(display_name) BETWEEN 1 AND 32),

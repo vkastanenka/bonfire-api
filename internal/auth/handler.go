@@ -254,7 +254,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 type sessionPath struct {
-	ID uuid.UUID `path:"id" validate:"required"`
+	ID string `path:"id" validate:"required,uuid"`
 }
 
 func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) error {
@@ -268,14 +268,19 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 
+	sessionID, err := uuid.Parse(path.ID)
+	if err != nil {
+		return ErrSessionIDInvalid().Wrap(err)
+	}
+
 	if err := h.service.RevokeSession(r.Context(), RevokeSessionParams{
 		UserID:          claims.UserID,
-		RevokeSessionID: path.ID,
+		RevokeSessionID: sessionID,
 	}); err != nil {
 		return err
 	}
 
-	if claims.SessionID == path.ID {
+	if claims.SessionID == sessionID {
 		httpio.CookieClearRefreshToken(w)
 	}
 

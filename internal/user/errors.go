@@ -20,7 +20,7 @@ func ErrPasswordMismatch() *errs.Error {
 }
 
 func ErrPreferredPresenceInvalid() *errs.Error {
-	return errs.Internal("Preferred presence invalid.").
+	return errs.InvalidArgument("Preferred presence invalid.").
 		Reason(ErrReasonPreferredPresenceDurationInvalid).
 		FieldViolation("preferredPresence", "Invalid value.", "VALUE_INVALID")
 }

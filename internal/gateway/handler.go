@@ -51,7 +51,8 @@ func (h *Handler) PrintTicket(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	ticket, err := h.service.PrintTicket(r.Context(), PrintTicketParams{
-		UserID: claims.UserID,
+		UserID:    claims.UserID,
+		SessionID: claims.SessionID,
 	})
 	if err != nil {
 		return err

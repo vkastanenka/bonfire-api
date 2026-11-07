@@ -173,6 +173,7 @@ func run(cfg *config.Config) error {
 	userHandler := user.NewHandler(userSvc, bind)
 
 	wsHub := gateway.NewHub(gatewaySvc)
+	gateway.RegisterEvents(wsHub, broadcaster)
 	go wsHub.Run(ctx)
 
 	gatewayHandler := gateway.NewHandler(wsHub, gatewaySvc, bind)

@@ -47,13 +47,15 @@ func newUsernameUpdatedPayload(id uuid.UUID, username string, updatedAt time.Tim
 type MessagePreferredPresenceUpdatedPayload struct {
 	UserID    uuid.UUID         `json:"userId"`
 	Presence  *gateway.Presence `json:"presence,omitempty"`
+	Until     *time.Time        `json:"until,omitempty"`
 	UpdatedAt time.Time         `json:"updatedAt"`
 }
 
-func newPreferredPresenceUpdatedPayload(id uuid.UUID, presence *gateway.Presence, updatedAt time.Time) MessagePreferredPresenceUpdatedPayload {
+func newPreferredPresenceUpdatedPayload(id uuid.UUID, presence *gateway.Presence, until *time.Time, updatedAt time.Time) MessagePreferredPresenceUpdatedPayload {
 	return MessagePreferredPresenceUpdatedPayload{
 		UserID:    id,
 		Presence:  presence,
+		Until:     until,
 		UpdatedAt: updatedAt,
 	}
 }

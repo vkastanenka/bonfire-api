@@ -20,7 +20,7 @@ func (s *Service) RevokeSession(ctx context.Context, p RevokeSessionParams) erro
 	}
 
 	s.cacheDeleteSession(ctx, p.UserID, p.RevokeSessionID, "revoke session")
-	s.broadcastSessionRevoked(ctx, p.UserID, p.RevokeSessionID, p)
+	s.broadcastSessionRevoked(ctx, p.UserID, p.RevokeSessionID)
 
 	return nil
 }

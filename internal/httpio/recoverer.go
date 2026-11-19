@@ -22,12 +22,12 @@ func Recoverer(next http.Handler) http.Handler {
 				return
 			}
 
-			// 1. Allow standard HTTP handler aborts to propagate
+			// Allow standard HTTP handler aborts to propagate
 			if rvr == http.ErrAbortHandler {
 				panic(rvr)
 			}
 
-			// 2. Normalize panic payload into a standard error interface
+			// Normalize panic payload into a standard error interface
 			var err error
 			if e, ok := rvr.(error); ok {
 				err = e
@@ -35,7 +35,7 @@ func Recoverer(next http.Handler) http.Handler {
 				err = fmt.Errorf("%v", rvr)
 			}
 
-			// 3. Handle broken pipe / socket disconnects gracefully without writing an error response
+			// Handle broken pipe / socket disconnects gracefully without writing an error response
 			if isBrokenPipe(err) {
 				slog.WarnContext(r.Context(), "client connection closed abruptly",
 					"error", err,
@@ -45,7 +45,7 @@ func Recoverer(next http.Handler) http.Handler {
 				return
 			}
 
-			// 4. Capture stack trace for internal telemetry
+			// Capture stack trace for internal telemetry
 			stackTrace := string(debug.Stack())
 
 			slog.ErrorContext(r.Context(), "catastrophic runtime panic recovered",
@@ -55,7 +55,7 @@ func Recoverer(next http.Handler) http.Handler {
 				"http.path", r.URL.Path,
 			)
 
-			// 5. Construct AIP-193 compliant internal error
+			// Construct AIP-193 compliant internal error
 			appErr := errs.Internal("").Reason("PANIC_RECOVERED").Wrap(err)
 
 			respondError(w, r, appErr)

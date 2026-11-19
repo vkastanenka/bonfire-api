@@ -147,11 +147,11 @@ func (s *Service) cacheLogin(ctx context.Context, u *user.User, sess *Session, a
 	}
 }
 
-func (s *Service) broadcastSessionRevoked(ctx context.Context, userID, sessionID uuid.UUID, payload any) {
+func (s *Service) broadcastSessionRevoked(ctx context.Context, userID, sessionID uuid.UUID) {
 	bCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 
-	if err := s.broadcaster.ToUserSession(bCtx, userID, sessionID, MessageSessionRevoked, payload); err != nil {
+	if err := s.broadcaster.ToUserSession(bCtx, userID, sessionID, MessageSessionRevoked, nil); err != nil {
 		slog.WarnContext(bCtx, "failed to broadcast session revoked event",
 			slog.String("user_id", userID.String()),
 			slog.String("session_id", sessionID.String()),

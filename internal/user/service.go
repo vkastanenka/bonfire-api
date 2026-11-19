@@ -143,6 +143,10 @@ type UpdatePasswordParams struct {
 }
 
 func (s *Service) UpdatePassword(ctx context.Context, p UpdatePasswordParams) error {
+	if p.CurrentPassword == p.NewPassword {
+		return nil
+	}
+
 	if p.NewPassword != p.NewPasswordConfirm {
 		return ErrPasswordMismatch()
 	}
@@ -244,7 +248,7 @@ func (s *Service) UpdatePreferredPresence(ctx context.Context, p UpdatePreferred
 		u.ID,
 		s.getBroadcastTargetIDs(ctx, p.UserID),
 		MessagePreferredPresenceUpdated,
-		newPreferredPresenceUpdatedPayload(u.ID, u.EffectivePresence(dbNow), u.UpdatedAt),
+		newPreferredPresenceUpdatedPayload(u.ID, u.EffectivePresence(dbNow), u.PreferredPresenceUntil, u.UpdatedAt),
 		"failed to broadcast preferred presence updated",
 	)
 

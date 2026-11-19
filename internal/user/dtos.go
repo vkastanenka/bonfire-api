@@ -7,57 +7,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type SummaryDTO struct {
-	ID          uuid.UUID `json:"id"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"displayName"`
-	AvatarURL   *string   `json:"avatarUrl,omitempty"`
-	IsDisabled  bool      `json:"isDisabled"`
-}
-
-func NewSummaryDTO(u *User) *SummaryDTO {
-	if u == nil {
-		return nil
-	}
-	return &SummaryDTO{
-		ID:          u.ID,
-		Username:    u.Username,
-		DisplayName: u.DisplayName,
-		AvatarURL:   u.AvatarURL,
-		IsDisabled:  u.IsDisabled(),
-	}
-}
-
-func NewSummaryDTOs(users []*User) []SummaryDTO {
-	if len(users) == 0 {
-		return nil
-	}
-
-	dtos := make([]SummaryDTO, 0, len(users))
-	for _, u := range users {
-		if dto := NewSummaryDTO(u); dto != nil {
-			dtos = append(dtos, *dto)
-		}
-	}
-
-	return dtos
-}
-
-func NewSummaryDTOMap(users map[uuid.UUID]*User) map[uuid.UUID]SummaryDTO {
-	if len(users) == 0 {
-		return make(map[uuid.UUID]SummaryDTO)
-	}
-
-	dtos := make(map[uuid.UUID]SummaryDTO, len(users))
-	for id, u := range users {
-		if dto := NewSummaryDTO(u); dto != nil {
-			dtos[id] = *dto
-		}
-	}
-
-	return dtos
-}
-
 type DTO struct {
 	ID          uuid.UUID `json:"id"`
 	Username    string    `json:"username"`

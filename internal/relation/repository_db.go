@@ -163,6 +163,89 @@ func (r *Repository) ListOutgoingBlocksByUserID(
 	return r.ListOutgoingTypeByUserID(ctx, userID, TypeBlocked, limit)
 }
 
+func (r *Repository) CountTypeByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+	relType Type,
+) (int, error) {
+	count, err := r.store.RelationCountTypeByUserID(ctx, db.RelationCountTypeByUserIDParams{
+		UserID: db.ToUUID(userID),
+		Type:   int16(relType),
+	})
+	if err != nil {
+		return 0, db.NewError(err, db.ResourceRelation)
+	}
+
+	return int(count), nil
+}
+
+func (r *Repository) CountFriendsByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+	return r.CountTypeByUserID(ctx, userID, TypeFriends)
+}
+
+func (r *Repository) CountIncomingTypeByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+	relType Type,
+) (int, error) {
+	count, err := r.store.RelationCountIncomingTypeByUserID(ctx, db.RelationCountIncomingTypeByUserIDParams{
+		UserID: db.ToUUID(userID),
+		Type:   int16(relType),
+	})
+	if err != nil {
+		return 0, db.NewError(err, db.ResourceRelation)
+	}
+
+	return int(count), nil
+}
+
+func (r *Repository) CountOutgoingTypeByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+	relType Type,
+) (int, error) {
+	count, err := r.store.RelationCountOutgoingTypeByUserID(ctx, db.RelationCountOutgoingTypeByUserIDParams{
+		UserID: db.ToUUID(userID),
+		Type:   int16(relType),
+	})
+	if err != nil {
+		return 0, db.NewError(err, db.ResourceRelation)
+	}
+
+	return int(count), nil
+}
+
+func (r *Repository) CountIncomingPendingsByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+	return r.CountIncomingTypeByUserID(ctx, userID, TypePending)
+}
+
+func (r *Repository) CountOutgoingPendingsByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+	return r.CountOutgoingTypeByUserID(ctx, userID, TypePending)
+}
+
+func (r *Repository) CountIncomingBlocksByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+	return r.CountIncomingTypeByUserID(ctx, userID, TypeBlocked)
+}
+
+func (r *Repository) CountOutgoingBlocksByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+	return r.CountOutgoingTypeByUserID(ctx, userID, TypeBlocked)
+}
+
 func (r *Repository) HasIncomingBlock(ctx context.Context, actorID uuid.UUID, peerIDs []uuid.UUID) (bool, error) {
 	if len(peerIDs) == 0 {
 		return false, nil

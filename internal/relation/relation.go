@@ -116,16 +116,20 @@ func (r *Relation) IsPending() bool { return r.Type.IsPending() }
 func (r *Relation) IsFriends() bool { return r.Type.IsFriends() }
 func (r *Relation) IsBlocked() bool { return r.Type.IsBlocked() }
 
+func (r *Relation) IsActor(userID uuid.UUID) bool {
+	return r.ActorID == userID
+}
+
 func (r *Relation) IsPendingActor(userID uuid.UUID) bool {
-	return r.IsPending() && r.ActorID == userID
+	return r.IsPending() && r.IsActor(userID)
 }
 
 func (r *Relation) IsFriendsActor(userID uuid.UUID) bool {
-	return r.IsFriends() && r.ActorID == userID
+	return r.IsFriends() && r.IsActor(userID)
 }
 
 func (r *Relation) IsBlockedActor(userID uuid.UUID) bool {
-	return r.IsBlocked() && r.ActorID == userID
+	return r.IsBlocked() && r.IsActor(userID)
 }
 
 func (r *Relation) IsParticipant(userID uuid.UUID) bool {
@@ -133,7 +137,7 @@ func (r *Relation) IsParticipant(userID uuid.UUID) bool {
 }
 
 func (r *Relation) IsBlockedByPeer(userID uuid.UUID) bool {
-	return r.IsBlocked() && r.IsParticipant(userID) && r.ActorID != userID
+	return r.IsBlocked() && r.IsParticipant(userID) && !r.IsActor(userID)
 }
 
 func (r *Relation) PeerID(userID uuid.UUID) uuid.UUID {

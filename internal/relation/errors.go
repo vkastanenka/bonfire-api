@@ -27,7 +27,7 @@ func ErrPendingRequestNotFound() *errs.Error {
 
 func ErrMaxPendingRequestsReached() *errs.Error {
 	return errs.ResourceExhausted("Maximum outgoing friend requests limit reached.").
-		Reason("RELATION_MAX_PENDING_REACHED")
+		Reason("RELATION_MAX_OUTGOING_PENDING_REQUESTS_REACHED")
 }
 
 func ErrMaxFriendsReached() *errs.Error {
@@ -53,6 +53,11 @@ func ErrAlreadyFriends() *errs.Error {
 func ErrPermissionDenied() *errs.Error {
 	return errs.PermissionDenied("Cannot interact with this user.").
 		Reason("RELATION_PERMISSION_DENIED")
+}
+
+func ErrAlreadyOutgoingBlock() *errs.Error {
+	return errs.PermissionDenied("You are already blocking this user.").
+		Reason("RELATION_ALREADY_OUTGOING_BLOCK")
 }
 
 func ErrAlreadyPending() *errs.Error {

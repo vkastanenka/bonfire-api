@@ -10,11 +10,11 @@ package relation
 // }
 
 // const (
-// 	EventFriendRequestSent    = "relation.friend_request_sent"
+
+// )// 	EventFriendRequestSent    = "relation.friend_request_sent"
 // 	EventFriendRequestDeleted = "relation.friend_request_deleted"
 // 	EventFriendAdded          = "relation.friend_added"
 // 	EventFriendDeleted        = "relation.friend_deleted"
-// )
 
 // func RegisterEvents(w Worker, b Broadcaster) {
 // 	w.RegisterHandler(EventFriendRequestSent, newFriendRequestSentEventHandler(b))

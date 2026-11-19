@@ -1,5 +1,33 @@
 package relation
 
+import (
+	"bonfire-api/internal/user"
+	"context"
+
+	"github.com/google/uuid"
+)
+
+type Broadcaster interface {
+	ToUser(ctx context.Context, recipientID uuid.UUID, messageType string, payload any, excludeSessionIDs ...uuid.UUID) error
+	ToUserSession(ctx context.Context, userID uuid.UUID, sessionID uuid.UUID, messageType string, payload any) error
+	ToUserSessions(ctx context.Context, userID uuid.UUID, sessionIDs []uuid.UUID, messageType string, payload any) error
+	ToUsers(ctx context.Context, recipientIDs []uuid.UUID, messageType string, payload any, excludeSessionIDs ...uuid.UUID) error
+}
+
+type UserRepository interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+	GetBatch(ctx context.Context, ids []uuid.UUID) ([]*user.User, error)
+}
+
+type CachedUserRepository interface {
+	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
+	GetBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*user.User, error)
+}
+
+type TX interface {
+	ExecTx(ctx context.Context, fn func(txCtx context.Context) error) error
+}
+
 // type Cache interface {
 // 	AddFriendID(ctx context.Context, userID uuid.UUID, friendID uuid.UUID) error
 // 	AddFriendPair(ctx context.Context, userA uuid.UUID, userB uuid.UUID) error
@@ -52,7 +80,6 @@ package relation
 // 	Set(ctx context.Context, usr *user.User) error
 // 	SetBatch(ctx context.Context, users map[uuid.UUID]*user.User) error
 // }
-
 
 // type Repository interface {
 // 	DeleteByUserID(ctx context.Context, user1ID uuid.UUID, user2ID uuid.UUID, actorID uuid.UUID) error
@@ -114,18 +141,4 @@ package relation
 
 // type OutboxRepository interface {
 // 	Create(ctx context.Context, e *outbox.Event) error
-// }
-
-// type UserRepository interface {
-// 	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
-// 	GetBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*user.User, error)
-// }
-
-// type CachedUserRepository interface {
-// 	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
-// 	GetBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*user.User, error)
-// }
-
-// type TX interface {
-// 	ExecTx(ctx context.Context, fn func(txCtx context.Context) error) error
 // }

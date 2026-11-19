@@ -60,22 +60,15 @@ type Querier interface {
 	ReactionGet(ctx context.Context, arg ReactionGetParams) (MessageReaction, error)
 	ReactionGetBatchByUserIDAndMessageIDs(ctx context.Context, arg ReactionGetBatchByUserIDAndMessageIDsParams) ([]ReactionGetBatchByUserIDAndMessageIDsRow, error)
 	ReactionGetBatchSummaryByMessageIDs(ctx context.Context, messageIds []pgtype.UUID) ([]ReactionGetBatchSummaryByMessageIDsRow, error)
+	RelationCountIncomingTypeByUserID(ctx context.Context, arg RelationCountIncomingTypeByUserIDParams) (int64, error)
+	RelationCountOutgoingTypeByUserID(ctx context.Context, arg RelationCountOutgoingTypeByUserIDParams) (int64, error)
+	RelationCountTypeByUserID(ctx context.Context, arg RelationCountTypeByUserIDParams) (int64, error)
 	RelationDeleteByUserID(ctx context.Context, arg RelationDeleteByUserIDParams) error
 	RelationGet(ctx context.Context, arg RelationGetParams) (Relation, error)
 	RelationGetByChannelID(ctx context.Context, channelID pgtype.UUID) (Relation, error)
 	RelationGetForUpdate(ctx context.Context, arg RelationGetForUpdateParams) (Relation, error)
 	RelationHasIncomingBlock(ctx context.Context, arg RelationHasIncomingBlockParams) (bool, error)
-	// TODO: Delete
-	RelationListFriendsByUserID(ctx context.Context, arg RelationListFriendsByUserIDParams) ([]Relation, error)
-	// TODO: Delete
-	RelationListIncomingBlocksByUserID(ctx context.Context, arg RelationListIncomingBlocksByUserIDParams) ([]Relation, error)
-	// TODO: Delete
-	RelationListIncomingPendingsByUserID(ctx context.Context, arg RelationListIncomingPendingsByUserIDParams) ([]Relation, error)
 	RelationListIncomingTypeByUserID(ctx context.Context, arg RelationListIncomingTypeByUserIDParams) ([]Relation, error)
-	// TODO: Delete
-	RelationListOutgoingBlocksByUserID(ctx context.Context, arg RelationListOutgoingBlocksByUserIDParams) ([]Relation, error)
-	// TODO: Delete
-	RelationListOutgoingPendingsByUserID(ctx context.Context, arg RelationListOutgoingPendingsByUserIDParams) ([]Relation, error)
 	RelationListOutgoingTypeByUserID(ctx context.Context, arg RelationListOutgoingTypeByUserIDParams) ([]Relation, error)
 	RelationListTypeByUserID(ctx context.Context, arg RelationListTypeByUserIDParams) ([]Relation, error)
 	RelationSave(ctx context.Context, arg RelationSaveParams) (Relation, error)

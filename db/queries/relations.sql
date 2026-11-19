@@ -79,6 +79,35 @@ ORDER BY
     created_at DESC
 LIMIT @limit_val::int;
 
+-- name: RelationCountTypeByUserID :one
+SELECT
+    COUNT(*)
+FROM
+    relations
+WHERE (user1_id = @user_id::uuid
+    OR user2_id = @user_id::uuid)
+AND type = @type::smallint;
+
+-- name: RelationCountIncomingTypeByUserID :one
+SELECT
+    COUNT(*)
+FROM
+    relations
+WHERE (user1_id = @user_id::uuid
+    OR user2_id = @user_id::uuid)
+AND type = @type::smallint
+AND actor_id != @user_id::uuid;
+
+-- name: RelationCountOutgoingTypeByUserID :one
+SELECT
+    COUNT(*)
+FROM
+    relations
+WHERE (user1_id = @user_id::uuid
+    OR user2_id = @user_id::uuid)
+AND type = @type::smallint
+AND actor_id = @user_id::uuid;
+
 -- name: RelationHasIncomingBlock :one
 SELECT
     EXISTS (

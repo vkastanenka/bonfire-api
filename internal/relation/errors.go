@@ -45,6 +45,11 @@ func ErrNotPending() *errs.Error {
 		Reason("RELATION_NOT_PENDING")
 }
 
+func ErrPendingActor() *errs.Error {
+	return errs.PermissionDenied("Cannot accept friend request you sent.").
+		Reason("RELATION_PENDING_ACTOR")
+}
+
 func ErrAlreadyFriends() *errs.Error {
 	return errs.AlreadyExists("Already friends with this user.").
 		Reason("RELATION_ALREADY_FRIENDS")
@@ -53,6 +58,11 @@ func ErrAlreadyFriends() *errs.Error {
 func ErrPermissionDenied() *errs.Error {
 	return errs.PermissionDenied("Cannot interact with this user.").
 		Reason("RELATION_PERMISSION_DENIED")
+}
+
+func ErrCannotAcceptFriendRequest() *errs.Error {
+	return errs.PermissionDenied("Cannot currently accept this friend request.").
+		Reason("RELATION_FRIEND_REQUEST_ACCEPTANCE_DENIED")
 }
 
 func ErrAlreadyOutgoingBlock() *errs.Error {

@@ -1,6 +1,7 @@
 package relation
 
 import (
+	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/user"
 )
 
@@ -18,5 +19,19 @@ type MessageFriendRequestSentPayload struct {
 func newFriendRequestSentPayload(user *user.DTO) MessageFriendRequestSentPayload {
 	return MessageFriendRequestSentPayload{
 		User: user,
+	}
+}
+
+type MessageFriendAddedPayload struct {
+	User     *user.DTO        `json:"user"`
+	Presence gateway.Presence `json:"presence"`
+	// Channel
+	// Member
+}
+
+func newFriendAddedPayload(user *user.DTO, presence gateway.Presence) MessageFriendAddedPayload {
+	return MessageFriendAddedPayload{
+		User:     user,
+		Presence: presence,
 	}
 }

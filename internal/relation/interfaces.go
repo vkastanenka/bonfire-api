@@ -1,6 +1,7 @@
 package relation
 
 import (
+	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/user"
 	"context"
 
@@ -12,6 +13,11 @@ type Broadcaster interface {
 	ToUserSession(ctx context.Context, userID uuid.UUID, sessionID uuid.UUID, messageType string, payload any) error
 	ToUserSessions(ctx context.Context, userID uuid.UUID, sessionIDs []uuid.UUID, messageType string, payload any) error
 	ToUsers(ctx context.Context, recipientIDs []uuid.UUID, messageType string, payload any, excludeSessionIDs ...uuid.UUID) error
+}
+
+type GatewayCache interface {
+	GetBatchPresence(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID]gateway.Presence, error)
+	GetPresence(ctx context.Context, userID uuid.UUID) (gateway.Presence, error)
 }
 
 type UserRepository interface {

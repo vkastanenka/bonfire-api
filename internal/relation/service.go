@@ -1,6 +1,7 @@
 package relation
 
 import (
+	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/pkg/errs"
 	"bonfire-api/internal/user"
 	"context"
@@ -14,7 +15,8 @@ type Service struct {
 	cache *Cache
 	repo  *Repository
 	// cachedRepo        CachedRepository
-	broadcaster Broadcaster
+	broadcaster  Broadcaster
+	gatewayCache GatewayCache
 	// channelRepo       ChannelRepository
 	// cachedChannelRepo CachedChannelRepository
 	// memberRepo        MemberRepository
@@ -27,23 +29,24 @@ type Service struct {
 }
 
 func NewService(
-	// cache Cache,
+	cache *Cache,
 	repo *Repository,
 	// cachedRepo CachedRepository,
 	broadcaster Broadcaster,
+	gatewayCache GatewayCache,
 	// channelRepo ChannelRepository,
 	// cachedChannelRepo CachedChannelRepository,
 	// memberRepo MemberRepository,
 	// cachedMemberRepo CachedMemberRepository,
-	// presenceCache PresenceCache,
-	// userCache UserCache,
 	userRepo UserRepository,
 	cachedUserRepo CachedUserRepository,
 	tx TX,
 ) *Service {
 	return &Service{
-		// cache:             cache,
-		repo: repo,
+		cache:        cache,
+		repo:         repo,
+		broadcaster:  broadcaster,
+		gatewayCache: gatewayCache,
 		// cachedRepo:        cachedRepo,
 		// channelRepo:       channelRepo,
 		// cachedChannelRepo: cachedChannelRepo,
@@ -153,12 +156,12 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 		case TypePending:
 			s.invalidateCache(ctx, "new_pending", userID, peerID, s.cache.DeletePendingPair)
 		case TypeFriends:
-			s.invalidateCache(ctx, "new_friends", userID, peerID, s.cache.DeleteNewFriendsPair)
+			s.invalidateCache(ctx, "new_friends", peerID, userID, s.cache.DeleteNewFriendsPair)
 		}
 
 		actor, err := s.cachedUserRepo.Get(ctx, userID)
 		if err != nil {
-			slog.WarnContext(ctx, "failed to load actor for relation broadcast",
+			slog.WarnContext(ctx, "failed to load actor for pending relation broadcast",
 				slog.String("user_id", userID.String()),
 				slog.String("peer_id", peerID.String()),
 				slog.Any("error", err),
@@ -177,7 +180,7 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 				MessageFriendRequestSent,
 				newFriendRequestSentPayload(user.NewDTO(actor)),
 			); err != nil {
-				slog.WarnContext(bCtx, "failed to broadcast friend request send",
+				slog.WarnContext(bCtx, "failed to broadcast new pending relation",
 					slog.String("user_id", userID.String()),
 					slog.String("peer_id", peerID.String()),
 					slog.Any("error", err),
@@ -189,6 +192,127 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 	}
 
 	return nil
+}
+
+// Channel      *channel.Channel
+// ActorMember  *channel.Member
+
+type TransitionFriendsResult struct {
+	PeerUser     *user.User
+	PeerPresence gateway.Presence
+}
+
+func (s *Service) TransitionFriends(ctx context.Context, userID, peerID uuid.UUID) (*TransitionFriendsResult, error) {
+	if userID == peerID {
+		return nil, ErrCannotRequestSelf()
+	}
+
+	u1, u2 := sortIDPair(userID, peerID)
+	now := time.Now()
+
+	err := s.tx.ExecTx(ctx, func(txCtx context.Context) error {
+		userFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, userID)
+		if err != nil {
+			return err
+		}
+		if userFriendsCount >= MaxTypeLimit {
+			return ErrMaxFriendsReached()
+		}
+
+		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)
+		if err != nil {
+			return err
+		}
+
+		if !rel.IsPending() {
+			return ErrNotPending()
+		}
+
+		if rel.IsActor(userID) {
+			return ErrPendingActor()
+		}
+
+		ok, err := s.canAddFriendWithPeer(txCtx, peerID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrCannotAcceptFriendRequest()
+		}
+
+		// TODO: Create new channel and channel members, then pass channelID to rel.Accept.
+		rel.Accept(userID, uuid.Nil, now)
+
+		_, err = s.repo.Save(txCtx, rel)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.invalidateCache(ctx, "new_friends", peerID, userID, s.cache.DeleteNewFriendsPair)
+
+	ids := []uuid.UUID{userID, peerID}
+
+	users, usersErr := s.cachedUserRepo.GetBatch(ctx, ids)
+	if usersErr != nil {
+		slog.WarnContext(ctx, "failed to load users for new friends broadcast",
+			slog.String("user_id", userID.String()),
+			slog.String("peer_id", peerID.String()),
+			slog.Any("error", usersErr),
+		)
+	}
+
+	presences, presencesErr := s.gatewayCache.GetBatchPresence(ctx, ids)
+	if presencesErr != nil {
+		slog.WarnContext(ctx, "failed to load presences for new friends broadcast",
+			slog.String("user_id", userID.String()),
+			slog.String("peer_id", peerID.String()),
+			slog.Any("error", presencesErr),
+		)
+	}
+
+	bCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+
+	actorUser := users[userID]
+	actorPresence := resolvePresence(presences, userID)
+	if actorUser != nil {
+		if err := s.broadcaster.ToUser(
+			bCtx,
+			peerID,
+			MessageFriendAdded,
+			newFriendAddedPayload(user.NewDTO(actorUser), actorPresence),
+		); err != nil {
+			slog.WarnContext(bCtx, "failed to broadcast new friends relation to peer",
+				slog.String("user_id", userID.String()),
+				slog.String("peer_id", peerID.String()),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	peerUser := users[peerID]
+	peerPresence := resolvePresence(presences, peerID)
+	if peerUser != nil {
+		if err := s.broadcaster.ToUser(
+			bCtx,
+			userID,
+			MessageFriendAdded,
+			newFriendAddedPayload(user.NewDTO(peerUser), peerPresence),
+		); err != nil {
+			slog.WarnContext(bCtx, "failed to broadcast new friends relation to actor",
+				slog.String("user_id", userID.String()),
+				slog.String("peer_id", peerID.String()),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	return &TransitionFriendsResult{
+		PeerUser:     peerUser,
+		PeerPresence: peerPresence,
+	}, nil
 }
 
 func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) (bool, error) {
@@ -214,298 +338,12 @@ func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) 
 	return true, nil
 }
 
-// payload := EventFriendRequestSentPayload{
-// 	ActorID:   actorID,
-// 	PeerID:    peerID,
-// 	Actor:     user.ParseSummary(actor),
-// 	CreatedAt: now,
-// }
-
-// event, err := outbox.New(
-// 	actorID,
-// 	claims.SessionID,
-// 	appctx.GetTraceID(ctx),
-// 	[]uuid.UUID{peerID},
-// 	EventFriendRequestSent,
-// 	payload,
-// 	now,
-// )
-// if err != nil {
-// 	return err
-// }
-
-// return s.outboxRepo.Create(txCtx, event)
-
-// outgoingPendings, err := s.cachedRepo.GetOutgoingPendingIDs(ctx, actorID)
-// if err == nil {
-// 	if helpers.ContainsID(outgoingPendings, peerID) {
-// 		return nil
-// 	}
-// 	if len(outgoingPendings) >= MaxPeerTypeLimit {
-// 		return ErrMaxPendingRequestsReached()
-// 	}
-// }
-
-// if incomingPendings, err := s.cache.GetIncomingPendingIDs(ctx, actorID); err == nil {
-// 	if helpers.ContainsID(incomingPendings, peerID) {
-// 		return nil
-// 	}
-// } else {
-// 	slog.WarnContext(ctx, "failed to get incoming pendings from cache",
-// 		slog.String("user_id", actorID.String()),
-// 		slog.String("peer_id", peerID.String()),
-// 		slog.Any("error", err),
-// 	)
-// }
-
-// if peerIncomingPendings, err := s.cachedRepo.GetIncomingPendingIDs(ctx, peerID); err == nil && len(peerIncomingPendings) >= MaxPeerTypeLimit {
-// 	return nil
-// }
-
-// friends, err := s.cachedRepo.GetFriendIDs(ctx, actorID)
-// if err == nil {
-// 	if helpers.ContainsID(friends, peerID) {
-// 		return nil
-// 	}
-// 	if len(friends) >= MaxPeerTypeLimit {
-// 		return ErrMaxFriendsReached()
-// 	}
-// }
-
-// actor, err := s.cachedUserRepo.Get(ctx, actorID)
-// if err != nil {
-// 	return err
-// }
-
-// u1, u2 := sortIDPair(actorID, peerID)
-// var newRel *Relation
-
-// err = s.tx.ExecTx(ctx, func(txCtx context.Context) error {
-// 	existing, err := s.repo.GetForUpdate(txCtx, u1, u2)
-// 	if err != nil && !errs.IsNotFound(err) {
-// 		return err
-// 	}
-
-// 	if existing != nil {
-// 		return nil
-// 	}
-
-// 	now := time.Now()
-// 	newRel = NewPending(u1, u2, actorID, now)
-
-// 	if _, err = s.repo.Save(txCtx, newRel); err != nil {
-// 		return err
-// 	}
-
-// 	payload := EventFriendRequestSentPayload{
-// 		ActorID:   actorID,
-// 		PeerID:    peerID,
-// 		Actor:     user.ParseSummary(actor),
-// 		CreatedAt: now,
-// 	}
-
-// 	event, err := outbox.New(
-// 		actorID,
-// 		claims.SessionID,
-// 		appctx.GetTraceID(ctx),
-// 		[]uuid.UUID{peerID},
-// 		EventFriendRequestSent,
-// 		payload,
-// 		now,
-// 	)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return s.outboxRepo.Create(txCtx, event)
-// })
-// if err != nil {
-// 	return err
-// }
-
-// s.invalidateCache(ctx, actorID, peerID, newRel)
-
-// return nil
-
-// type TransitionFriendsResult struct {
-// 	Channel      *channel.Channel
-// 	ActorMember  *channel.Member
-// 	PeerUser     *user.User
-// 	PeerPresence presence.Presence
-// }
-
-// func (s *Service) TransitionFriends(ctx context.Context, peerID uuid.UUID) (*TransitionFriendsResult, error) {
-// 	claims, err := appctx.GetClaims(ctx)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	actorID := claims.UserID
-// 	if actorID == peerID {
-// 		return nil, ErrCannotRequestSelf()
-// 	}
-
-// 	if s.checkBlockedCache(ctx, actorID, peerID) {
-// 		return nil, ErrPendingRequestNotFound()
-// 	}
-
-// 	if incomingPendings, err := s.cache.GetIncomingPendingIDs(ctx, actorID); err == nil {
-// 		if !helpers.ContainsID(incomingPendings, peerID) {
-// 			return nil, ErrPendingRequestNotFound()
-// 		}
-// 	} else {
-// 		slog.WarnContext(ctx, "failed to get incoming pendings from cache",
-// 			slog.String("user_id", actorID.String()),
-// 			slog.String("peer_id", peerID.String()),
-// 			slog.Any("error", err),
-// 		)
-// 	}
-
-// 	actorFriends, err := s.cachedRepo.GetFriendIDs(ctx, actorID)
-// 	if err == nil {
-// 		if helpers.ContainsID(actorFriends, peerID) {
-// 			return nil, ErrAlreadyFriends()
-// 		}
-// 		if len(actorFriends) >= MaxPeerTypeLimit {
-// 			return nil, ErrMaxFriendsReached()
-// 		}
-// 	}
-
-// 	peerFriends, err := s.cachedRepo.GetFriendIDs(ctx, peerID)
-// 	if err == nil && len(peerFriends) >= MaxPeerTypeLimit {
-// 		return nil, ErrPendingRequestNotFound()
-// 	}
-
-// 	actorUser, err := s.cachedUserRepo.Get(ctx, actorID)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	peerUser, err := s.cachedUserRepo.Get(ctx, peerID)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	presences, _ := s.presenceCache.GetBatch(ctx, []uuid.UUID{actorID, peerID})
-// 	actorPresence := presences[actorID]
-// 	peerPresence := presences[peerID]
-
-// 	var createdChannel *channel.Channel
-// 	var actorMember *channel.Member
-// 	var updatedRel *Relation
-
-// 	u1, u2 := sortIDPair(actorID, peerID)
-
-// 	err = s.tx.ExecTx(ctx, func(txCtx context.Context) error {
-// 		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		if err := validateNonBlockedActor(actorID, rel); err != nil {
-// 			return ErrPendingRequestNotFound()
-// 		}
-
-// 		if err := validateAccept(actorID, rel); err != nil {
-// 			return err
-// 		}
-
-// 		now := time.Now()
-
-// 		ch, err := channel.NewDirectChannel(now)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		newCh, err := s.channelRepo.Create(txCtx, ch)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		createdChannel = newCh
-
-// 		newMembers := channel.NewMembers(newCh.ID, actorID, rel.PeerIDs(actorID), now)
-// 		createdMembers, err := s.memberRepo.CreateBatch(txCtx, newMembers)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		var peerMember *channel.Member
-// 		for _, m := range createdMembers {
-// 			if m.UserID == actorID {
-// 				actorMember = m
-// 			} else if m.UserID == peerID {
-// 				peerMember = m
-// 			}
-// 		}
-
-// 		rel.Accept(actorID, newCh.ID, now)
-
-// 		if _, err := s.repo.Save(txCtx, rel); err != nil {
-// 			return err
-// 		}
-// 		updatedRel = rel
-
-// 		actorPayload := EventFriendAddedPayload{
-// 			Friend:         user.ParseView(peerUser),
-// 			FriendPresence: peerPresence,
-// 			Channel:        newCh,
-// 			Member:         actorMember,
-// 			CreatedAt:      now,
-// 		}
-
-// 		actorEvent, err := outbox.New(
-// 			actorID,
-// 			claims.SessionID,
-// 			appctx.GetTraceID(ctx),
-// 			[]uuid.UUID{actorID, peerID},
-// 			EventFriendAdded,
-// 			actorPayload,
-// 			now,
-// 		)
-// 		if err != nil {
-// 			return err
-// 		}
-// 		if err := s.outboxRepo.Create(txCtx, actorEvent); err != nil {
-// 			return err
-// 		}
-
-// 		peerPayload := EventFriendAddedPayload{
-// 			Friend:         user.ParseView(actorUser),
-// 			FriendPresence: actorPresence,
-// 			Channel:        newCh,
-// 			Member:         peerMember,
-// 			CreatedAt:      now,
-// 		}
-
-// 		peerEvent, err := outbox.New(
-// 			actorID,
-// 			claims.SessionID,
-// 			appctx.GetTraceID(ctx),
-// 			[]uuid.UUID{actorID, peerID},
-// 			EventFriendAdded,
-// 			peerPayload,
-// 			now,
-// 		)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		return s.outboxRepo.Create(txCtx, peerEvent)
-// 	})
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	s.invalidateCache(ctx, actorID, peerID, &Relation{Type: TypePending})
-// 	s.invalidateCache(ctx, actorID, peerID, updatedRel)
-
-// 	return &TransitionFriendsResult{
-// 		Channel:      createdChannel,
-// 		ActorMember:  actorMember,
-// 		PeerUser:     peerUser,
-// 		PeerPresence: peerPresence,
-// 	}, nil
-// }
+func resolvePresence(presences map[uuid.UUID]gateway.Presence, id uuid.UUID) gateway.Presence {
+	if p, ok := presences[id]; ok && p != gateway.PresenceUnknown {
+		return p
+	}
+	return gateway.PresenceOffline
+}
 
 // func (s *Service) TransitionBlocked(ctx context.Context, peerID uuid.UUID) error {
 // 	claims, err := appctx.GetClaims(ctx)
@@ -753,3 +591,170 @@ func (s *Service) invalidateCache(
 		)
 	}
 }
+
+// func (s *Service) TransitionFriends(ctx context.Context, userID, peerID uuid.UUID) (*TransitionFriendsResult, error) {
+// 	if userID == peerID {
+// 		return nil, ErrCannotRequestSelf()
+// 	}
+
+// 	if s.checkBlockedCache(ctx, actorID, peerID) {
+// 		return nil, ErrPendingRequestNotFound()
+// 	}
+
+// 	if incomingPendings, err := s.cache.GetIncomingPendingIDs(ctx, actorID); err == nil {
+// 		if !helpers.ContainsID(incomingPendings, peerID) {
+// 			return nil, ErrPendingRequestNotFound()
+// 		}
+// 	} else {
+// 		slog.WarnContext(ctx, "failed to get incoming pendings from cache",
+// 			slog.String("user_id", actorID.String()),
+// 			slog.String("peer_id", peerID.String()),
+// 			slog.Any("error", err),
+// 		)
+// 	}
+
+// 	actorFriends, err := s.cachedRepo.GetFriendIDs(ctx, actorID)
+// 	if err == nil {
+// 		if helpers.ContainsID(actorFriends, peerID) {
+// 			return nil, ErrAlreadyFriends()
+// 		}
+// 		if len(actorFriends) >= MaxPeerTypeLimit {
+// 			return nil, ErrMaxFriendsReached()
+// 		}
+// 	}
+
+// 	peerFriends, err := s.cachedRepo.GetFriendIDs(ctx, peerID)
+// 	if err == nil && len(peerFriends) >= MaxPeerTypeLimit {
+// 		return nil, ErrPendingRequestNotFound()
+// 	}
+
+// 	actorUser, err := s.cachedUserRepo.Get(ctx, actorID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	peerUser, err := s.cachedUserRepo.Get(ctx, peerID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	presences, _ := s.presenceCache.GetBatch(ctx, []uuid.UUID{actorID, peerID})
+// 	actorPresence := presences[actorID]
+// 	peerPresence := presences[peerID]
+
+// 	var createdChannel *channel.Channel
+// 	var actorMember *channel.Member
+// 	var updatedRel *Relation
+
+// 	u1, u2 := sortIDPair(actorID, peerID)
+
+// 	err = s.tx.ExecTx(ctx, func(txCtx context.Context) error {
+// 		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		if err := validateNonBlockedActor(actorID, rel); err != nil {
+// 			return ErrPendingRequestNotFound()
+// 		}
+
+// 		if err := validateAccept(actorID, rel); err != nil {
+// 			return err
+// 		}
+
+// 		now := time.Now()
+
+// 		ch, err := channel.NewDirectChannel(now)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		newCh, err := s.channelRepo.Create(txCtx, ch)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		createdChannel = newCh
+
+// 		newMembers := channel.NewMembers(newCh.ID, actorID, rel.PeerIDs(actorID), now)
+// 		createdMembers, err := s.memberRepo.CreateBatch(txCtx, newMembers)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		var peerMember *channel.Member
+// 		for _, m := range createdMembers {
+// 			if m.UserID == actorID {
+// 				actorMember = m
+// 			} else if m.UserID == peerID {
+// 				peerMember = m
+// 			}
+// 		}
+
+// 		rel.Accept(actorID, newCh.ID, now)
+
+// 		if _, err := s.repo.Save(txCtx, rel); err != nil {
+// 			return err
+// 		}
+// 		updatedRel = rel
+
+// 		actorPayload := EventFriendAddedPayload{
+// 			Friend:         user.ParseView(peerUser),
+// 			FriendPresence: peerPresence,
+// 			Channel:        newCh,
+// 			Member:         actorMember,
+// 			CreatedAt:      now,
+// 		}
+
+// 		actorEvent, err := outbox.New(
+// 			actorID,
+// 			claims.SessionID,
+// 			appctx.GetTraceID(ctx),
+// 			[]uuid.UUID{actorID, peerID},
+// 			EventFriendAdded,
+// 			actorPayload,
+// 			now,
+// 		)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		if err := s.outboxRepo.Create(txCtx, actorEvent); err != nil {
+// 			return err
+// 		}
+
+// 		peerPayload := EventFriendAddedPayload{
+// 			Friend:         user.ParseView(actorUser),
+// 			FriendPresence: actorPresence,
+// 			Channel:        newCh,
+// 			Member:         peerMember,
+// 			CreatedAt:      now,
+// 		}
+
+// 		peerEvent, err := outbox.New(
+// 			actorID,
+// 			claims.SessionID,
+// 			appctx.GetTraceID(ctx),
+// 			[]uuid.UUID{actorID, peerID},
+// 			EventFriendAdded,
+// 			peerPayload,
+// 			now,
+// 		)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		return s.outboxRepo.Create(txCtx, peerEvent)
+// 	})
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	s.invalidateCache(ctx, actorID, peerID, &Relation{Type: TypePending})
+// 	s.invalidateCache(ctx, actorID, peerID, updatedRel)
+
+// 	return &TransitionFriendsResult{
+// 		Channel:      createdChannel,
+// 		ActorMember:  actorMember,
+// 		PeerUser:     peerUser,
+// 		PeerPresence: peerPresence,
+// 	}, nil
+// }

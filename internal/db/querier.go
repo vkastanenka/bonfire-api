@@ -65,11 +65,18 @@ type Querier interface {
 	RelationGetByChannelID(ctx context.Context, channelID pgtype.UUID) (Relation, error)
 	RelationGetForUpdate(ctx context.Context, arg RelationGetForUpdateParams) (Relation, error)
 	RelationHasIncomingBlock(ctx context.Context, arg RelationHasIncomingBlockParams) (bool, error)
+	// TODO: Delete
 	RelationListFriendsByUserID(ctx context.Context, arg RelationListFriendsByUserIDParams) ([]Relation, error)
+	// TODO: Delete
 	RelationListIncomingBlocksByUserID(ctx context.Context, arg RelationListIncomingBlocksByUserIDParams) ([]Relation, error)
+	// TODO: Delete
 	RelationListIncomingPendingsByUserID(ctx context.Context, arg RelationListIncomingPendingsByUserIDParams) ([]Relation, error)
+	RelationListIncomingTypeByUserID(ctx context.Context, arg RelationListIncomingTypeByUserIDParams) ([]Relation, error)
+	// TODO: Delete
 	RelationListOutgoingBlocksByUserID(ctx context.Context, arg RelationListOutgoingBlocksByUserIDParams) ([]Relation, error)
+	// TODO: Delete
 	RelationListOutgoingPendingsByUserID(ctx context.Context, arg RelationListOutgoingPendingsByUserIDParams) ([]Relation, error)
+	RelationListOutgoingTypeByUserID(ctx context.Context, arg RelationListOutgoingTypeByUserIDParams) ([]Relation, error)
 	RelationListTypeByUserID(ctx context.Context, arg RelationListTypeByUserIDParams) ([]Relation, error)
 	RelationSave(ctx context.Context, arg RelationSaveParams) (Relation, error)
 	SessionCreate(ctx context.Context, arg SessionCreateParams) (Session, error)

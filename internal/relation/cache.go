@@ -1,74 +1,87 @@
 package relation
 
-// var (
-// 	userPendingsTTL = 24 * time.Hour
-// 	userFriendsTTL  = 24 * time.Hour
-// 	userBlocksTTL   = 24 * time.Hour
-// )
+import (
+	"bonfire-api/internal/redis"
+	"context"
+	"time"
 
-// func userIncomingPendingsKey(id uuid.UUID) string {
-// 	return "{user:" + id.String() + "}:incoming_pendings"
-// }
-// func userOutgoingPendingsKey(id uuid.UUID) string {
-// 	return "{user:" + id.String() + "}:outgoing_pendings"
-// }
-// func userFriendsKey(id uuid.UUID) string        { return "{user:" + id.String() + "}:friends" }
-// func userIncomingBlocksKey(id uuid.UUID) string { return "{user:" + id.String() + "}:incoming_blocks" }
-// func userOutgoingBlocksKey(id uuid.UUID) string { return "{user:" + id.String() + "}:outgoing_blocks" }
+	"github.com/google/uuid"
+	redisdriver "github.com/redis/go-redis/v9"
+)
 
-// type RelationCache struct {
-// 	client redisdriver.Cmdable
-// }
+var (
+	userPendingsTTL = 24 * time.Hour
+	userFriendsTTL  = 24 * time.Hour
+	userBlocksTTL   = 24 * time.Hour
+)
 
-// func NewRelationCache(client redisdriver.Cmdable) *RelationCache {
-// 	return &RelationCache{client: client}
-// }
+func userIncomingPendingsKey(id uuid.UUID) string {
+	return "user:" + "{" + id.String() + "}" + ":incoming_pendings"
+}
+func userOutgoingPendingsKey(id uuid.UUID) string {
+	return "user:" + "{" + id.String() + "}" + ":outgoing_pendings"
+}
+func userFriendsKey(id uuid.UUID) string { return "user:" + "{" + id.String() + "}" + ":friends" }
+func userIncomingBlocksKey(id uuid.UUID) string {
+	return "user:" + "{" + id.String() + "}" + ":incoming_blocks"
+}
+func userOutgoingBlocksKey(id uuid.UUID) string {
+	return "user:" + "{" + id.String() + "}" + ":outgoing_blocks"
+}
+
+type Cache struct {
+	client redisdriver.Cmdable
+}
+
+func NewCache(client redisdriver.Cmdable) *Cache {
+	return &Cache{client: client}
+}
 
 // // ============================================================================
 // // Incoming Pendings (Requests received by userID)
 // // ============================================================================
 
-// func (c *RelationCache) GetIncomingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-// 	return getSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingPendingsKey(userID))
+// func (c *Cache) GetIncomingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+// 	return getSetIDs(ctx, redis.ResourceRelation, c.client, userIncomingPendingsKey(userID))
 // }
 
-// func (c *RelationCache) SetIncomingPendingIDs(ctx context.Context, userID uuid.UUID, pendingIDs []uuid.UUID) error {
-// 	return setSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingPendingsKey(userID), pendingIDs, userPendingsTTL)
+// func (c *Cache) SetIncomingPendingIDs(ctx context.Context, userID uuid.UUID, pendingIDs []uuid.UUID) error {
+// 	return setSetIDs(ctx, redis.ResourceRelation, c.client, userIncomingPendingsKey(userID), pendingIDs, userPendingsTTL)
 // }
 
-// func (c *RelationCache) AddIncomingPendingID(ctx context.Context, userID uuid.UUID, senderID uuid.UUID) error {
-// 	return addToSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingPendingsKey(userID), userPendingsTTL, senderID)
+// func (c *Cache) AddIncomingPendingID(ctx context.Context, userID uuid.UUID, senderID uuid.UUID) error {
+// 	return addToSetIDs(ctx, redis.ResourceRelation, c.client, userIncomingPendingsKey(userID), userPendingsTTL, senderID)
 // }
 
-// func (c *RelationCache) RemoveIncomingPendingID(ctx context.Context, userID uuid.UUID, senderID uuid.UUID) error {
-// 	return removeFromSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingPendingsKey(userID), senderID)
+// func (c *Cache) RemoveIncomingPendingID(ctx context.Context, userID uuid.UUID, senderID uuid.UUID) error {
+// 	return removeFromSetIDs(ctx, redis.ResourceRelation, c.client, userIncomingPendingsKey(userID), senderID)
 // }
 
-// func (c *RelationCache) DeleteIncomingPendingsIndex(ctx context.Context, userID uuid.UUID) error {
-// 	return deleteSet(ctx, redis.ScopeRelation, c.client, userIncomingPendingsKey(userID))
+// func (c *Cache) DeleteIncomingPendingsIndex(ctx context.Context, userID uuid.UUID) error {
+// 	return deleteSet(ctx, redis.ResourceRelation, c.client, userIncomingPendingsKey(userID))
 // }
 
 // // ============================================================================
 // // Outgoing Pendings (Requests sent by userID)
 // // ============================================================================
 
-// func (c *RelationCache) GetOutgoingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+// func (c *Cache) GetOutgoingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 // 	return getSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingPendingsKey(userID))
 // }
 
-// func (c *RelationCache) SetOutgoingPendingIDs(ctx context.Context, userID uuid.UUID, pendingIDs []uuid.UUID) error {
+// func (c *Cache) SetOutgoingPendingIDs(ctx context.Context, userID uuid.UUID, pendingIDs []uuid.UUID) error {
 // 	return setSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingPendingsKey(userID), pendingIDs, userPendingsTTL)
 // }
 
-// func (c *RelationCache) AddOutgoingPendingID(ctx context.Context, userID uuid.UUID, targetID uuid.UUID) error {
+// func (c *Cache) AddOutgoingPendingID(ctx context.Context, userID uuid.UUID, targetID uuid.UUID) error {
 // 	return addToSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingPendingsKey(userID), userPendingsTTL, targetID)
 // }
 
-// func (c *RelationCache) RemoveOutgoingPendingID(ctx context.Context, userID uuid.UUID, targetID uuid.UUID) error {
+// func (c *Cache) RemoveOutgoingPendingID(ctx context.Context, userID uuid.UUID, targetID uuid.UUID) error {
 // 	return removeFromSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingPendingsKey(userID), targetID)
 // }
 
-// func (c *RelationCache) DeleteOutgoingPendingsIndex(ctx context.Context, userID uuid.UUID) error {
+// func (c *Cache) DeleteOutgoingPendingsIndex(ctx context.Context, userID uuid.UUID) error {
 // 	return deleteSet(ctx, redis.ScopeRelation, c.client, userOutgoingPendingsKey(userID))
 // }
 
@@ -76,23 +89,23 @@ package relation
 // // Friends
 // // ============================================================================
 
-// func (c *RelationCache) GetFriendIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+// func (c *Cache) GetFriendIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 // 	return getSetIDs(ctx, redis.ScopeRelation, c.client, userFriendsKey(userID))
 // }
 
-// func (c *RelationCache) SetFriendIDs(ctx context.Context, userID uuid.UUID, friendIDs []uuid.UUID) error {
+// func (c *Cache) SetFriendIDs(ctx context.Context, userID uuid.UUID, friendIDs []uuid.UUID) error {
 // 	return setSetIDs(ctx, redis.ScopeRelation, c.client, userFriendsKey(userID), friendIDs, userFriendsTTL)
 // }
 
-// func (c *RelationCache) AddFriendID(ctx context.Context, userID uuid.UUID, friendID uuid.UUID) error {
+// func (c *Cache) AddFriendID(ctx context.Context, userID uuid.UUID, friendID uuid.UUID) error {
 // 	return addToSetIDs(ctx, redis.ScopeRelation, c.client, userFriendsKey(userID), userFriendsTTL, friendID)
 // }
 
-// func (c *RelationCache) RemoveFriendID(ctx context.Context, userID uuid.UUID, friendID uuid.UUID) error {
+// func (c *Cache) RemoveFriendID(ctx context.Context, userID uuid.UUID, friendID uuid.UUID) error {
 // 	return removeFromSetIDs(ctx, redis.ScopeRelation, c.client, userFriendsKey(userID), friendID)
 // }
 
-// func (c *RelationCache) DeleteFriendsIndex(ctx context.Context, userID uuid.UUID) error {
+// func (c *Cache) DeleteFriendsIndex(ctx context.Context, userID uuid.UUID) error {
 // 	return deleteSet(ctx, redis.ScopeRelation, c.client, userFriendsKey(userID))
 // }
 
@@ -100,23 +113,23 @@ package relation
 // // Incoming Blocks (Users who have blocked userID)
 // // ============================================================================
 
-// func (c *RelationCache) GetIncomingBlockIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+// func (c *Cache) GetIncomingBlockIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 // 	return getSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingBlocksKey(userID))
 // }
 
-// func (c *RelationCache) SetIncomingBlockIDs(ctx context.Context, userID uuid.UUID, blockIDs []uuid.UUID) error {
+// func (c *Cache) SetIncomingBlockIDs(ctx context.Context, userID uuid.UUID, blockIDs []uuid.UUID) error {
 // 	return setSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingBlocksKey(userID), blockIDs, userBlocksTTL)
 // }
 
-// func (c *RelationCache) AddIncomingBlockID(ctx context.Context, userID uuid.UUID, blockerUserID uuid.UUID) error {
+// func (c *Cache) AddIncomingBlockID(ctx context.Context, userID uuid.UUID, blockerUserID uuid.UUID) error {
 // 	return addToSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingBlocksKey(userID), userBlocksTTL, blockerUserID)
 // }
 
-// func (c *RelationCache) RemoveIncomingBlockID(ctx context.Context, userID uuid.UUID, blockerUserID uuid.UUID) error {
+// func (c *Cache) RemoveIncomingBlockID(ctx context.Context, userID uuid.UUID, blockerUserID uuid.UUID) error {
 // 	return removeFromSetIDs(ctx, redis.ScopeRelation, c.client, userIncomingBlocksKey(userID), blockerUserID)
 // }
 
-// func (c *RelationCache) DeleteIncomingBlocksIndex(ctx context.Context, userID uuid.UUID) error {
+// func (c *Cache) DeleteIncomingBlocksIndex(ctx context.Context, userID uuid.UUID) error {
 // 	return deleteSet(ctx, redis.ScopeRelation, c.client, userIncomingBlocksKey(userID))
 // }
 
@@ -124,23 +137,23 @@ package relation
 // // Outgoing Blocks (Users blocked by userID)
 // // ============================================================================
 
-// func (c *RelationCache) GetOutgoingBlockIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+// func (c *Cache) GetOutgoingBlockIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 // 	return getSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingBlocksKey(userID))
 // }
 
-// func (c *RelationCache) SetOutgoingBlockIDs(ctx context.Context, userID uuid.UUID, blockIDs []uuid.UUID) error {
+// func (c *Cache) SetOutgoingBlockIDs(ctx context.Context, userID uuid.UUID, blockIDs []uuid.UUID) error {
 // 	return setSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingBlocksKey(userID), blockIDs, userBlocksTTL)
 // }
 
-// func (c *RelationCache) AddOutgoingBlockID(ctx context.Context, userID uuid.UUID, blockedUserID uuid.UUID) error {
+// func (c *Cache) AddOutgoingBlockID(ctx context.Context, userID uuid.UUID, blockedUserID uuid.UUID) error {
 // 	return addToSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingBlocksKey(userID), userBlocksTTL, blockedUserID)
 // }
 
-// func (c *RelationCache) RemoveOutgoingBlockID(ctx context.Context, userID uuid.UUID, blockedUserID uuid.UUID) error {
+// func (c *Cache) RemoveOutgoingBlockID(ctx context.Context, userID uuid.UUID, blockedUserID uuid.UUID) error {
 // 	return removeFromSetIDs(ctx, redis.ScopeRelation, c.client, userOutgoingBlocksKey(userID), blockedUserID)
 // }
 
-// func (c *RelationCache) DeleteOutgoingBlocksIndex(ctx context.Context, userID uuid.UUID) error {
+// func (c *Cache) DeleteOutgoingBlocksIndex(ctx context.Context, userID uuid.UUID) error {
 // 	return deleteSet(ctx, redis.ScopeRelation, c.client, userOutgoingBlocksKey(userID))
 // }
 
@@ -148,7 +161,53 @@ package relation
 // // Multi-Key Composite Operations
 // // ============================================================================
 
-// func (c *RelationCache) AddPendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+func (c *Cache) DeletePendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+	return c.deleteKeys(ctx, userOutgoingPendingsKey(actorID), userIncomingPendingsKey(peerID))
+}
+
+func (c *Cache) DeleteFriendsPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+	return c.deleteKeys(ctx, userFriendsKey(actorID), userFriendsKey(peerID))
+}
+
+func (c *Cache) DeleteNewFriendsPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+	return c.deleteKeys(
+		ctx,
+		userOutgoingPendingsKey(actorID),
+		userIncomingPendingsKey(peerID),
+		userFriendsKey(actorID),
+		userFriendsKey(peerID),
+	)
+}
+
+func (c *Cache) DeleteBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+	return c.deleteKeys(ctx, userOutgoingBlocksKey(actorID), userIncomingBlocksKey(peerID))
+}
+
+func (c *Cache) DeletePendingBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+	return c.deleteKeys(
+		ctx,
+		userOutgoingPendingsKey(actorID),
+		userIncomingPendingsKey(peerID),
+		userOutgoingBlocksKey(actorID),
+		userIncomingBlocksKey(peerID),
+	)
+}
+
+func (c *Cache) DeleteFriendBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+	return c.deleteKeys(
+		ctx,
+		userFriendsKey(actorID),
+		userFriendsKey(peerID),
+		userOutgoingBlocksKey(actorID),
+		userIncomingBlocksKey(peerID),
+	)
+}
+
+func (c *Cache) deleteKeys(ctx context.Context, keys ...string) error {
+	return redis.DeleteSetPipelined(ctx, redis.ResourceRelation, c.client, keys)
+}
+
+// func (c *Cache) AddPendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
 // 	additions := map[string][]uuid.UUID{
 // 		userOutgoingPendingsKey(actorID): {peerID},
 // 		userIncomingPendingsKey(peerID):  {actorID},
@@ -156,7 +215,7 @@ package relation
 // 	return addToSetIDsPipelined(ctx, redis.ScopeRelation, c.client, additions, userPendingsTTL)
 // }
 
-// func (c *RelationCache) RemovePendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
+// func (c *Cache) RemovePendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
 // 	removals := map[string][]uuid.UUID{
 // 		userOutgoingPendingsKey(actorID): {peerID},
 // 		userIncomingPendingsKey(peerID):  {actorID},
@@ -164,15 +223,7 @@ package relation
 // 	return removeFromSetIDsPipelined(ctx, redis.ScopeRelation, c.client, removals)
 // }
 
-// func (c *RelationCache) DeletePendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
-// 	keys := []string{
-// 		userOutgoingPendingsKey(actorID),
-// 		userIncomingPendingsKey(peerID),
-// 	}
-// 	return deleteSetPipelined(ctx, redis.ScopeRelation, c.client, keys)
-// }
-
-// func (c *RelationCache) AddFriendPair(ctx context.Context, userA, userB uuid.UUID) error {
+// func (c *Cache) AddFriendPair(ctx context.Context, userA, userB uuid.UUID) error {
 // 	additions := map[string][]uuid.UUID{
 // 		userFriendsKey(userA): {userB},
 // 		userFriendsKey(userB): {userA},
@@ -180,7 +231,7 @@ package relation
 // 	return addToSetIDsPipelined(ctx, redis.ScopeRelation, c.client, additions, userFriendsTTL)
 // }
 
-// func (c *RelationCache) RemoveFriendPair(ctx context.Context, userA, userB uuid.UUID) error {
+// func (c *Cache) RemoveFriendPair(ctx context.Context, userA, userB uuid.UUID) error {
 // 	removals := map[string][]uuid.UUID{
 // 		userFriendsKey(userA): {userB},
 // 		userFriendsKey(userB): {userA},
@@ -188,15 +239,7 @@ package relation
 // 	return removeFromSetIDsPipelined(ctx, redis.ScopeRelation, c.client, removals)
 // }
 
-// func (c *RelationCache) DeleteFriendsPair(ctx context.Context, userA, userB uuid.UUID) error {
-// 	keys := []string{
-// 		userFriendsKey(userA),
-// 		userFriendsKey(userB),
-// 	}
-// 	return deleteSetPipelined(ctx, redis.ScopeRelation, c.client, keys)
-// }
-
-// func (c *RelationCache) BlockUser(ctx context.Context, blockerID, targetID uuid.UUID) error {
+// func (c *Cache) BlockUser(ctx context.Context, blockerID, targetID uuid.UUID) error {
 // 	additions := map[string][]uuid.UUID{
 // 		userOutgoingBlocksKey(blockerID): {targetID},
 // 		userIncomingBlocksKey(targetID):  {blockerID},
@@ -204,18 +247,10 @@ package relation
 // 	return addToSetIDsPipelined(ctx, redis.ScopeRelation, c.client, additions, userBlocksTTL)
 // }
 
-// func (c *RelationCache) UnblockUser(ctx context.Context, blockerID, targetID uuid.UUID) error {
+// func (c *Cache) UnblockUser(ctx context.Context, blockerID, targetID uuid.UUID) error {
 // 	removals := map[string][]uuid.UUID{
 // 		userOutgoingBlocksKey(blockerID): {targetID},
 // 		userIncomingBlocksKey(targetID):  {blockerID},
 // 	}
 // 	return removeFromSetIDsPipelined(ctx, redis.ScopeRelation, c.client, removals)
-// }
-
-// func (c *RelationCache) DeleteBlocksPair(ctx context.Context, blockerID, targetID uuid.UUID) error {
-// 	keys := []string{
-// 		userOutgoingBlocksKey(blockerID),
-// 		userIncomingBlocksKey(targetID),
-// 	}
-// 	return deleteSetPipelined(ctx, redis.ScopeRelation, c.client, keys)
 // }

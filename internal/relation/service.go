@@ -11,8 +11,8 @@ import (
 )
 
 type Service struct {
-	// cache             Cache
-	repo *Repository
+	cache *Cache
+	repo  *Repository
 	// cachedRepo        CachedRepository
 	broadcaster Broadcaster
 	// channelRepo       ChannelRepository
@@ -149,6 +149,13 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 	}
 
 	if savedRel != nil {
+		switch savedRel.Type {
+		case TypePending:
+			s.invalidateCache(ctx, "new_pending", userID, peerID, s.cache.DeletePendingPair)
+		case TypeFriends:
+			s.invalidateCache(ctx, "new_friends", userID, peerID, s.cache.DeleteNewFriendsPair)
+		}
+
 		actor, err := s.cachedUserRepo.Get(ctx, userID)
 		if err != nil {
 			slog.WarnContext(ctx, "failed to load actor for relation broadcast",
@@ -316,7 +323,7 @@ func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) 
 // 	return err
 // }
 
-// s.invalidatePairCache(ctx, actorID, peerID, newRel)
+// s.invalidateCache(ctx, actorID, peerID, newRel)
 
 // return nil
 
@@ -489,8 +496,8 @@ func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) 
 // 		return nil, err
 // 	}
 
-// 	s.invalidatePairCache(ctx, actorID, peerID, &Relation{Type: TypePending})
-// 	s.invalidatePairCache(ctx, actorID, peerID, updatedRel)
+// 	s.invalidateCache(ctx, actorID, peerID, &Relation{Type: TypePending})
+// 	s.invalidateCache(ctx, actorID, peerID, updatedRel)
 
 // 	return &TransitionFriendsResult{
 // 		Channel:      createdChannel,
@@ -595,8 +602,8 @@ func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) 
 // 		return err
 // 	}
 
-// 	s.invalidatePairCache(ctx, actorID, peerID, &Relation{Type: TypeBlocked})
-// 	s.invalidatePairCache(ctx, actorID, peerID, prevRel)
+// 	s.invalidateCache(ctx, actorID, peerID, &Relation{Type: TypeBlocked})
+// 	s.invalidateCache(ctx, actorID, peerID, prevRel)
 
 // 	return nil
 // }
@@ -689,7 +696,7 @@ func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) 
 // 		return err
 // 	}
 
-// 	s.invalidatePairCache(ctx, actorID, peerID, deletedRel)
+// 	s.invalidateCache(ctx, actorID, peerID, deletedRel)
 
 // 	return nil
 // }
@@ -722,35 +729,27 @@ func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) 
 // 	return false
 // }
 
-// func (s *Service) invalidatePairCache(ctx context.Context, actorID, peerID uuid.UUID, rel *Relation) {
-// 	if rel == nil {
-// 		return
-// 	}
+type pairDeleteFunc func(ctx context.Context, actorID, peerID uuid.UUID) error
 
-// 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 	defer cancel()
+func (s *Service) invalidateCache(
+	ctx context.Context,
+	kind string,
+	actorID, peerID uuid.UUID,
+	deleteFn pairDeleteFunc,
+) {
+	if deleteFn == nil || s.cache == nil {
+		return
+	}
 
-// 	var err error
-// 	var cacheType string
+	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
 
-// 	switch {
-// 	case rel.IsFriends():
-// 		cacheType = "friends"
-// 		err = s.cache.DeleteFriendsPair(cacheCtx, actorID, peerID)
-// 	case rel.IsPending():
-// 		cacheType = "pending"
-// 		err = s.cache.DeletePendingPair(cacheCtx, actorID, peerID)
-// 	case rel.IsBlocked():
-// 		cacheType = "blocks"
-// 		err = s.cache.DeleteBlocksPair(cacheCtx, actorID, peerID)
-// 	}
-
-// 	if err != nil {
-// 		slog.WarnContext(cacheCtx, "failed to invalidate cache pair",
-// 			slog.String("cache_type", cacheType),
-// 			slog.String("user_id", actorID.String()),
-// 			slog.String("peer_id", peerID.String()),
-// 			slog.Any("error", err),
-// 		)
-// 	}
-// }
+	if err := deleteFn(cacheCtx, actorID, peerID); err != nil {
+		slog.WarnContext(cacheCtx, "failed to invalidate cache pair",
+			slog.String("cache_type", kind),
+			slog.String("actor_id", actorID.String()),
+			slog.String("peer_id", peerID.String()),
+			slog.Any("error", err),
+		)
+	}
+}

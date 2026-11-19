@@ -456,8 +456,8 @@ func deleteSet(
 	return nil
 }
 
-// deleteSetPipelined deletes multiple keys in a single Redis pipeline.
-func deleteSetPipelined(
+// DeleteSetPipelined deletes multiple keys in a single Redis pipeline.
+func DeleteSetPipelined(
 	ctx context.Context,
 	resource Resource,
 	client redisdriver.Cmdable,

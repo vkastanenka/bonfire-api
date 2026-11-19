@@ -16,9 +16,8 @@ func ErrPeerIDInvalid() *errs.Error {
 }
 
 func ErrCannotRequestSelf() *errs.Error {
-	return errs.InvalidArgument("Cannot form a relation with yourself.").
-		Reason("RELATION_CANNOT_REQUEST_SELF").
-		FieldViolation("peer_id", "Cannot send a request to your own account", "CANNOT_REQUEST_SELF")
+	return errs.PermissionDenied("Cannot form a relation with yourself.").
+		Reason("RELATION_CANNOT_REQUEST_SELF")
 }
 
 func ErrPendingRequestNotFound() *errs.Error {
@@ -36,14 +35,13 @@ func ErrMaxFriendsReached() *errs.Error {
 		Reason("RELATION_MAX_FRIENDS_REACHED")
 }
 
-func ErrBlockedActor() *errs.Error {
-	return errs.InvalidArgument("Action cannot be performed on a blocked relationship.").
-		Reason("RELATION_BLOCKED_ACTOR").
-		FieldViolation("actor_id", "Actor is blocked", "BLOCKED_ACTOR")
+func ErrBlockedUser() *errs.Error {
+	return errs.PermissionDenied("Action cannot be performed on a blocked relationship.").
+		Reason("RELATION_BLOCKED_USER")
 }
 
 func ErrNotPending() *errs.Error {
-	return errs.Internal("Cannot accept relation that is not pending.").
+	return errs.PermissionDenied("Cannot accept relation that is not pending.").
 		Reason("RELATION_NOT_PENDING")
 }
 

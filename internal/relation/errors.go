@@ -4,6 +4,11 @@ import (
 	"bonfire-api/internal/pkg/errs"
 )
 
+func ErrPeerIDInvalid() *errs.Error {
+	return errs.InvalidArgument("Invalid peer ID format.").
+		FieldViolation("id", "Invalid ID.", "INVALID_ID")
+}
+
 func ErrCannotRequestSelf() *errs.Error {
 	return errs.PermissionDenied("Cannot form a relation with yourself.").
 		Reason("RELATION_CANNOT_REQUEST_SELF")

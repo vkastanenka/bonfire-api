@@ -1,88 +1,127 @@
 package relation
 
-// type RelationHandler struct {
-// 	service RelationService
-// 	bind    *httpio.Bind
-// }
+import (
+	"net/http"
 
-// func NewRelationHandler(service RelationService, bind *httpio.Bind) *RelationHandler {
-// 	return &RelationHandler{
-// 		service: service,
-// 		bind:    bind,
-// 	}
-// }
+	"bonfire-api/internal/appctx"
+	"bonfire-api/internal/gateway"
+	"bonfire-api/internal/httpio"
+	"bonfire-api/internal/user"
 
-// type RelationPeerPath struct {
-// 	PeerID uuid.UUID `path:"peerId" validate:"required"`
-// }
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+)
 
-// func (h *RelationHandler) SendRequest(w http.ResponseWriter, r *http.Request) error {
-// 	var path RelationPeerPath
-// 	if err := h.bind.Path(r, &path); err != nil {
-// 		return err
-// 	}
+type Handler struct {
+	service *Service
+	bind    *httpio.Bind
+}
 
-// 	if err := h.service.TransitionPending(r.Context(), path.PeerID); err != nil {
-// 		return err
-// 	}
+func NewHandler(service *Service, bind *httpio.Bind) *Handler {
+	return &Handler{
+		service: service,
+		bind:    bind,
+	}
+}
 
-// 	httpio.RespondNoContent(w)
-// 	return nil
-// }
+func (h *Handler) RegisterRoutes(r chi.Router) {
+	r.Post("/relations/requests/{id}", httpio.ToHTTPErr(h.sendFriendRequest))
+	r.Post("/relations/requests/{id}/accept", httpio.ToHTTPErr(h.acceptFriendRequest))
+	r.Post("/relations/blocks/{id}", httpio.ToHTTPErr(h.blockUser))
+	r.Delete("/relations/{id}", httpio.ToHTTPErr(h.deleteRelation))
+}
 
-// type AcceptRequestResponsePayload struct {
-// 	Channel      *channel.Channel
-// 	ActorMember  *channel.Member
-// 	PeerUser     user.View
-// 	PeerPresence presence.Presence
-// }
+type peerIDPath struct {
+	ID uuid.UUID `path:"id" validate:"required"`
+}
 
-// func (h *RelationHandler) AcceptRequest(w http.ResponseWriter, r *http.Request) error {
-// 	var path RelationPeerPath
-// 	if err := h.bind.Path(r, &path); err != nil {
-// 		return err
-// 	}
+func (h *Handler) sendFriendRequest(w http.ResponseWriter, r *http.Request) error {
+	userID, peerID, err := h.bindPeerRequest(r)
+	if err != nil {
+		return err
+	}
 
-// 	result, err := h.service.TransitionFriends(r.Context(), path.PeerID)
-// 	if err != nil {
-// 		return err
-// 	}
+	if err := h.service.TransitionPending(r.Context(), userID, peerID); err != nil {
+		return err
+	}
 
-// 	payload := &AcceptRequestResponsePayload{
-// 		Channel:      result.Channel,     // TODO: Update view
-// 		ActorMember:  result.ActorMember, // TODO: Update view
-// 		PeerUser:     user.ParseView(result.PeerUser),
-// 		PeerPresence: result.PeerPresence,
-// 	}
+	httpio.RespondNoContent(w)
+	return nil
+}
 
-// 	httpio.RespondOK(w, r, payload)
-// 	return nil
-// }
+type acceptFriendRequestResponse struct {
+	// Channel
+	// UserMembership
+	// PeerMembership
+	PeerUser     *user.DTO        `json:"peerUser,omitempty"`
+	PeerPresence gateway.Presence `json:"peerPresence"`
+}
 
-// func (h *RelationHandler) BlockUser(w http.ResponseWriter, r *http.Request) error {
-// 	var path RelationPeerPath
-// 	if err := h.bind.Path(r, &path); err != nil {
-// 		return err
-// 	}
+func (h *Handler) acceptFriendRequest(w http.ResponseWriter, r *http.Request) error {
+	userID, peerID, err := h.bindPeerRequest(r)
+	if err != nil {
+		return err
+	}
 
-// 	if err := h.service.TransitionBlocked(r.Context(), path.PeerID); err != nil {
-// 		return err
-// 	}
+	result, err := h.service.TransitionFriends(r.Context(), userID, peerID)
+	if err != nil {
+		return err
+	}
 
-// 	httpio.RespondNoContent(w)
-// 	return nil
-// }
+	var peerDTO *user.DTO
+	var peerPresence gateway.Presence
+	if result != nil {
+		peerPresence = result.PeerPresence
+		if result.PeerUser != nil {
+			peerDTO = user.NewDTO(result.PeerUser)
+		}
+	}
 
-// func (h *RelationHandler) RemoveRelation(w http.ResponseWriter, r *http.Request) error {
-// 	var path RelationPeerPath
-// 	if err := h.bind.Path(r, &path); err != nil {
-// 		return err
-// 	}
+	httpio.RespondOK(w, r, &acceptFriendRequestResponse{
+		PeerUser:     peerDTO,
+		PeerPresence: peerPresence,
+	})
+	return nil
+}
 
-// 	if err := h.service.DeleteByUserID(r.Context(), path.PeerID); err != nil {
-// 		return err
-// 	}
+func (h *Handler) blockUser(w http.ResponseWriter, r *http.Request) error {
+	userID, peerID, err := h.bindPeerRequest(r)
+	if err != nil {
+		return err
+	}
 
-// 	httpio.RespondNoContent(w)
-// 	return nil
-// }
+	if err := h.service.TransitionBlocked(r.Context(), userID, peerID); err != nil {
+		return err
+	}
+
+	httpio.RespondNoContent(w)
+	return nil
+}
+
+func (h *Handler) deleteRelation(w http.ResponseWriter, r *http.Request) error {
+	userID, peerID, err := h.bindPeerRequest(r)
+	if err != nil {
+		return err
+	}
+
+	if err := h.service.DeleteByUserID(r.Context(), userID, peerID); err != nil {
+		return err
+	}
+
+	httpio.RespondNoContent(w)
+	return nil
+}
+
+func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, err error) {
+	claims, err := appctx.GetClaims(r.Context())
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	var path peerIDPath
+	if err := h.bind.Path(r, &path); err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	return claims.UserID, path.ID, nil
+}

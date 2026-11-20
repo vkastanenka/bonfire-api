@@ -1,5 +1,12 @@
 package channel
 
+import "bonfire-api/internal/pkg/errs"
+
+func ErrJSONMarshalFailed() *errs.Error {
+	return errs.Internal("Failed to marshal json payload.").
+		Reason("JSON_MARSHAL_FAILED")
+}
+
 // func ErrCannotAddNonFriendUserToGroup() *errs.Error {
 // 	return errs.InvalidArgument("Cannot add non-friend user to group.").
 // 		Reason("NON_FRIEND_USER").

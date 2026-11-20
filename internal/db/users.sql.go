@@ -457,22 +457,22 @@ const userUpdateBatch = `-- name: UserUpdateBatch :many
 UPDATE
     users AS u
 SET
-    email = v.email,
-    username = v.username,
-    display_name = v.display_name,
-    password_hash = v.password_hash,
-    phone = v.phone,
-    bio = v.bio,
-    avatar_url = v.avatar_url,
-    banner_color = v.banner_color,
-    preferred_presence = v.preferred_presence,
-    preferred_presence_until = v.preferred_presence_until,
-    verified_at = v.verified_at,
-    disabled_at = v.disabled_at,
-    delete_scheduled_at = v.delete_scheduled_at,
-    updated_at = v.updated_at
+    email = rows.email,
+    username = rows.username,
+    display_name = rows.display_name,
+    password_hash = rows.password_hash,
+    phone = rows.phone,
+    bio = rows.bio,
+    avatar_url = rows.avatar_url,
+    banner_color = rows.banner_color,
+    preferred_presence = rows.preferred_presence,
+    preferred_presence_until = rows.preferred_presence_until,
+    verified_at = rows.verified_at,
+    disabled_at = rows.disabled_at,
+    delete_scheduled_at = rows.delete_scheduled_at,
+    updated_at = rows.updated_at
 FROM
-    jsonb_to_recordset($1::jsonb) AS v(id uuid,
+    jsonb_to_recordset($1::jsonb) AS rows (id uuid,
         email citext,
         username citext,
         display_name citext,
@@ -488,7 +488,7 @@ FROM
         delete_scheduled_at timestamptz,
         updated_at timestamptz)
 WHERE
-    u.id = v.id
+    u.id = rows.id
 RETURNING
     u.id, u.created_at, u.updated_at, u.verified_at, u.disabled_at, u.delete_scheduled_at, u.preferred_presence_until, u.preferred_presence, u.email, u.username, u.display_name, u.password_hash, u.phone, u.bio, u.avatar_url, u.banner_color
 `

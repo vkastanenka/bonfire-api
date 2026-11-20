@@ -110,7 +110,7 @@ CREATE INDEX idx_channel_members_last_read_message_id ON channel_members(last_re
 WHERE
     last_read_message_id IS NOT NULL;
 
-CREATE INDEX idx_channel_members_user_sidebar ON channel_members(user_id, pinned_at DESC NULLS LAST, channel_id)
+CREATE INDEX idx_channel_members_user_sidebar ON channel_members(user_id, pinned_at DESC NULLS LAST, channel_id DESC)
 WHERE
     is_visible = TRUE;
 

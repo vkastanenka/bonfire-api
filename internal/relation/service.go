@@ -66,7 +66,7 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 			return err
 		}
 		if outgoingPendingsCount >= MaxTypeLimit {
-			return ErrMaxPendingRequestsReached()
+			return ErrMaxOutgoingPendingRequestsReached()
 		}
 
 		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)
@@ -254,7 +254,7 @@ func (s *Service) TransitionBlocked(ctx context.Context, userID, peerID uuid.UUI
 			return err
 		}
 		if userBlockedCount >= MaxTypeLimit {
-			return ErrMaxBlockedReached()
+			return ErrMaxBlocksReached()
 		}
 
 		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)

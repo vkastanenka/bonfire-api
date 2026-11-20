@@ -147,11 +147,6 @@ func (r *Relation) PeerID(userID uuid.UUID) uuid.UUID {
 	return r.User1ID
 }
 
-// TODO: Confirm what this is used for?
-func (r *Relation) PeerIDs(userID uuid.UUID) []uuid.UUID {
-	return []uuid.UUID{r.PeerID(userID)}
-}
-
 func (r *Relation) Accept(actorID uuid.UUID, channelID uuid.UUID, now time.Time) {
 	r.Type = TypeFriends
 	r.ActorID = actorID
@@ -203,24 +198,4 @@ func sortFriendIDs(friendIDs []uuid.UUID, users map[uuid.UUID]*user.User) {
 
 		return bytes.Compare(aID[:], bID[:])
 	})
-}
-
-func validateIncomingBlock(userID uuid.UUID, rel *Relation) error {
-	if rel != nil && rel.IsBlockedByPeer(userID) {
-		return ErrBlockedUser()
-	}
-	return nil
-}
-
-func validateAccept(userID uuid.UUID, rel *Relation) error {
-	if rel == nil {
-		return nil
-	}
-	if !rel.IsPending() {
-		return ErrNotPending()
-	}
-	if rel.ActorID == userID {
-		return ErrCannotRequestSelf()
-	}
-	return nil
 }

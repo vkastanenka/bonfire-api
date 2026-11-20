@@ -29,10 +29,6 @@ func ParseTypeString(s string) (Type, error) {
 	return parse.EnumString[Type](s, typeNames[:], "relationType")
 }
 
-func ParseTypeStringBytes(b []byte) (Type, error) {
-	return parse.EnumStringBytes[Type](b, typeNames[:], "relationType")
-}
-
 func (t Type) IsValid() bool {
 	return t > TypeUnknown && t < typeMax
 }

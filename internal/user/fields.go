@@ -32,16 +32,8 @@ func ParsePreferredPresenceDurationInt(i int) (PreferredPresenceDuration, error)
 	return parse.EnumInt(i, preferredPresenceDurationMax, "preferred_presence_duration")
 }
 
-func ParsePreferredPresenceDurationIntBytes(b []byte) (PreferredPresenceDuration, error) {
-	return parse.EnumIntBytes(b, preferredPresenceDurationMax, "preferred_presence_duration")
-}
-
 func ParsePreferredPresenceDurationString(s string) (PreferredPresenceDuration, error) {
 	return parse.EnumString[PreferredPresenceDuration](s, preferredPresenceDurationNames[:], "preferred_presence_duration")
-}
-
-func ParsePreferredPresenceDurationStringBytes(b []byte) (PreferredPresenceDuration, error) {
-	return parse.EnumStringBytes[PreferredPresenceDuration](b, preferredPresenceDurationNames[:], "preferred_presence_duration")
 }
 
 func (d PreferredPresenceDuration) IsValid() bool {

@@ -280,3 +280,50 @@ package channel
 // 	}
 // 	return nil
 // }
+
+// type MessageView struct {
+// 	ID               uuid.UUID       `json:"id"`
+// 	ChannelID        uuid.UUID       `json:"channelId"`
+// 	AuthorID         *uuid.UUID      `json:"authorId,omitempty"`
+// 	Type             MessageType     `json:"type"`
+// 	Content          *string         `json:"content,omitempty"`
+// 	Metadata         json.RawMessage `json:"metadata,omitempty"`
+// 	ReplyToMessageID *uuid.UUID      `json:"replyToMessageId,omitempty"`
+// 	ForwardMessageID *uuid.UUID      `json:"forwardMessageId,omitempty"`
+// 	ForwardChannelID *uuid.UUID      `json:"forwardChannelId,omitempty"`
+// 	PinnedAt         *time.Time      `json:"pinnedAt,omitempty"`
+// 	CreatedAt        time.Time       `json:"createdAt"`
+// 	UpdatedAt        time.Time       `json:"updatedAt"`
+// 	EditedAt         *time.Time      `json:"editedAt,omitempty"`
+// }
+
+// func ParseMessageView(m *Message) MessageView {
+// 	return MessageView{
+// 		ID:               m.ID,
+// 		ChannelID:        m.ChannelID,
+// 		AuthorID:         m.AuthorID,
+// 		Type:             m.Type,
+// 		Content:          m.Content,
+// 		Metadata:         m.Metadata,
+// 		ReplyToMessageID: m.ReplyToMessageID,
+// 		ForwardMessageID: m.ForwardMessageID,
+// 		ForwardChannelID: m.ForwardChannelID,
+// 		PinnedAt:         m.PinnedAt,
+// 		CreatedAt:        m.CreatedAt,
+// 		UpdatedAt:        m.UpdatedAt,
+// 		EditedAt:         m.EditedAt,
+// 	}
+// }
+
+// func ParseMessageViews(messages []*Message) []MessageView {
+// 	if len(messages) == 0 {
+// 		return nil
+// 	}
+
+// 	views := make([]MessageView, len(messages))
+// 	for i, m := range messages {
+// 		views[i] = ParseMessageView(m)
+// 	}
+
+// 	return views
+// }

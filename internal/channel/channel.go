@@ -133,3 +133,27 @@ package channel
 // 	}
 // 	return nil
 // }
+
+// type ChannelView struct {
+// 	ID            uuid.UUID   `json:"id"`
+// 	Type          ChannelType `json:"type"`
+// 	Name          *string     `json:"name,omitempty"`
+// 	IconURL       *string     `json:"iconUrl,omitempty"`
+// 	LastMessageID *uuid.UUID  `json:"lastMessageId,omitempty"`
+// 	LastMessageAt time.Time   `json:"lastMessageAt"`
+// 	CreatedAt     time.Time   `json:"createdAt"`
+// 	UpdatedAt     time.Time   `json:"updatedAt"`
+// }
+
+// func ParseChannelView(c *Channel) ChannelView {
+// 	return ChannelView{
+// 		ID:            c.ID,
+// 		Type:          c.Type,
+// 		Name:          c.Name,
+// 		IconURL:       c.IconURL,
+// 		LastMessageID: c.LastMessageID,
+// 		LastMessageAt: c.LastMessageAt,
+// 		CreatedAt:     c.CreatedAt,
+// 		UpdatedAt:     c.UpdatedAt,
+// 	}
+// }

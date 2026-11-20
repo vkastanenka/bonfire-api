@@ -2,200 +2,288 @@ package channel
 
 // import (
 // 	"context"
-// 	"log/slog"
-// 	"time"
 
 // 	"bonfire-api/internal/channel"
-// 	"bonfire-api/internal/pkg/errs"
-// 	"bonfire-api/internal/pkg/helpers"
+// 	"bonfire-api/internal/redis"
 
 // 	"github.com/google/uuid"
+// 	redisdriver "github.com/redis/go-redis/v9"
 // )
 
-// type CachedMemberRepository struct {
-// 	cache        MemberCache
-// 	channelCache ChannelCache
-// 	repo         *MemberRepository
+// func channelMembersKey(id uuid.UUID) string { return "{channel:" + id.String() + "}:members" }
+
+// type MemberCache struct {
+// 	client redisdriver.Cmdable
 // }
 
-// func NewCachedMemberRepository(
-// 	cache MemberCache,
-// 	channelCache ChannelCache,
-// 	repo *MemberRepository,
-// ) *CachedMemberRepository {
-// 	return &CachedMemberRepository{
-// 		cache:        cache,
-// 		channelCache: channelCache,
-// 		repo:         repo,
-// 	}
+// func NewMemberCache(client redisdriver.Cmdable) *MemberCache {
+// 	return &MemberCache{client: client}
 // }
 
-// func (r *CachedMemberRepository) Get(ctx context.Context, channelID, userID uuid.UUID) (*channel.Member, error) {
-// 	mem, err := r.cache.Get(ctx, channelID, userID)
-// 	if err == nil && mem != nil {
-// 		return mem, nil
-// 	}
-
-// 	if err != nil {
-// 		slog.WarnContext(ctx, "redis channel member cache read failure, falling back to database",
-// 			slog.String("channel_id", channelID.String()),
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", err),
-// 		)
-// 	}
-
-// 	mem, err = r.repo.Get(ctx, channelID, userID)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 	defer cancel()
-
-// 	if setErr := r.cache.Add(cacheCtx, channelID, []*channel.Member{mem}); setErr != nil {
-// 		slog.WarnContext(cacheCtx, "failed to populate channel member cache after database read",
-// 			slog.String("channel_id", channelID.String()),
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", setErr),
-// 		)
-// 	}
-
-// 	return mem, nil
-// }
-
-// func (r *CachedMemberRepository) GetBatchByChannelID(
+// func (c *MemberCache) Get(
 // 	ctx context.Context,
-// 	channelID uuid.UUID,
-// ) ([]*channel.Member, error) {
-// 	memberMap, err := r.GetBatchByChannelIDs(ctx, []uuid.UUID{channelID})
+// 	channelID, userID uuid.UUID,
+// ) (*channel.Member, error) {
+// 	if channelID == uuid.Nil || userID == uuid.Nil {
+// 		return nil, nil
+// 	}
+
+// 	rawBytes, err := c.client.HGet(ctx, channelMembersKey(channelID), userID.String()).Bytes()
 // 	if err != nil {
-// 		return nil, err
+// 		if redis.IsCacheMiss(err) {
+// 			return nil, nil
+// 		}
+// 		return nil, redis.NewError(err, redis.ScopeMember)
 // 	}
 
-// 	members, ok := memberMap[channelID]
-// 	if !ok {
-// 		return nil, errs.NotFound("Channel members not found.").
-// 			Reason("CHANNEL_MEMBERS_NOT_FOUND").
-// 			Meta("channelID", channelID.String())
+// 	member, err := unmarshalMember(rawBytes)
+// 	if err != nil {
+// 		_ = c.Invalidate(ctx, channelID, userID)
+// 		return nil, nil
 // 	}
 
-// 	return members, nil
+// 	return member, nil
 // }
 
-// func (r *CachedMemberRepository) GetBatchByChannelIDs(
+// func (c *MemberCache) Invalidate(ctx context.Context, channelID, userID uuid.UUID) error {
+// 	if err := c.client.HDel(ctx, channelMembersKey(channelID), userID.String()).Err(); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
+// 	}
+// 	return nil
+// }
+
+// func (c *MemberCache) InvalidateBatch(ctx context.Context, channelID uuid.UUID, userIDs []uuid.UUID) error {
+// 	if len(userIDs) == 0 {
+// 		return nil
+// 	}
+
+// 	fields := make([]string, len(userIDs))
+// 	for i, id := range userIDs {
+// 		fields[i] = id.String()
+// 	}
+
+// 	if err := c.client.HDel(ctx, channelMembersKey(channelID), fields...).Err(); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
+// 	}
+// 	return nil
+// }
+
+// func (c *MemberCache) InvalidateChannel(ctx context.Context, channelID uuid.UUID) error {
+// 	if err := c.client.Del(ctx, channelMembersKey(channelID)).Err(); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
+// 	}
+// 	return nil
+// }
+
+// func (c *MemberCache) SetUserMembers(ctx context.Context, userID uuid.UUID, members []*channel.Member) error {
+// 	if userID == uuid.Nil || len(members) == 0 {
+// 		return nil
+// 	}
+
+// 	pipe := c.client.Pipeline()
+
+// 	zKey := userChannelsKey(userID)
+// 	pipe.Del(ctx, zKey)
+
+// 	for _, m := range members {
+// 		if m == nil || m.ChannelID == uuid.Nil {
+// 			continue
+// 		}
+
+// 		var score float64
+// 		if m.PinnedAt != nil && !m.PinnedAt.IsZero() {
+// 			score = 1e12 + float64(m.PinnedAt.Unix())
+// 		} else {
+// 			score = float64(m.CreatedAt.Unix())
+// 		}
+
+// 		pipe.ZAdd(ctx, zKey, redisdriver.Z{
+// 			Score:  score,
+// 			Member: m.ChannelID.String(),
+// 		})
+// 	}
+
+// 	for _, m := range members {
+// 		if m == nil || m.ChannelID == uuid.Nil || m.UserID == uuid.Nil {
+// 			continue
+// 		}
+
+// 		mBytes, err := marshalMember(m)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		pipe.HSet(ctx, channelMembersKey(m.ChannelID), m.UserID.String(), mBytes)
+// 	}
+
+// 	if _, err := pipe.Exec(ctx); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
+// 	}
+
+// 	return nil
+// }
+
+// func (c *MemberCache) Add(ctx context.Context, channelID uuid.UUID, members []*channel.Member) error {
+// 	if len(members) == 0 {
+// 		return nil
+// 	}
+
+// 	memberMap := make(map[string]any, len(members))
+// 	for _, m := range members {
+// 		if m == nil || m.UserID == uuid.Nil {
+// 			continue
+// 		}
+
+// 		mBytes, err := marshalMember(m)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		memberMap[m.UserID.String()] = mBytes
+// 	}
+
+// 	if len(memberMap) == 0 {
+// 		return nil
+// 	}
+
+// 	pipe := c.client.Pipeline()
+// 	pipe.HSet(ctx, channelMembersKey(channelID), memberMap)
+
+// 	channelIDStr := channelID.String()
+// 	for _, m := range members {
+// 		if m == nil || m.UserID == uuid.Nil {
+// 			continue
+// 		}
+
+// 		var score float64
+// 		if m.PinnedAt != nil && !m.PinnedAt.IsZero() {
+// 			score = 1e12 + float64(m.PinnedAt.Unix())
+// 		} else {
+// 			score = float64(m.CreatedAt.Unix())
+// 		}
+
+// 		pipe.ZAdd(ctx, userChannelsKey(m.UserID), redisdriver.Z{
+// 			Score:  score,
+// 			Member: channelIDStr,
+// 		})
+// 	}
+
+// 	if _, err := pipe.Exec(ctx); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
+// 	}
+
+// 	return nil
+// }
+
+// func (c *MemberCache) Remove(ctx context.Context, channelID, userID uuid.UUID) error {
+// 	pipe := c.client.Pipeline()
+
+// 	pipe.HDel(ctx, channelMembersKey(channelID), userID.String())
+// 	pipe.ZRem(ctx, userChannelsKey(userID), channelID.String())
+
+// 	if _, err := pipe.Exec(ctx); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
+// 	}
+// 	return nil
+// }
+
+// func (c *MemberCache) GetBatchByChannelIDs(
 // 	ctx context.Context,
 // 	channelIDs []uuid.UUID,
-// ) (map[uuid.UUID][]*channel.Member, error) {
+// ) (map[uuid.UUID][]*channel.Member, []uuid.UUID, error) {
 // 	if len(channelIDs) == 0 {
-// 		return make(map[uuid.UUID][]*channel.Member), nil
+// 		return make(map[uuid.UUID][]*channel.Member), nil, nil
 // 	}
 
-// 	found, missing, err := r.cache.GetBatchByChannelIDs(ctx, channelIDs)
+// 	keys := make([]string, 0, len(channelIDs))
+// 	validIDs := make([]uuid.UUID, 0, len(channelIDs))
+
+// 	for _, id := range channelIDs {
+// 		if id == uuid.Nil {
+// 			continue
+// 		}
+// 		keys = append(keys, channelMembersKey(id))
+// 		validIDs = append(validIDs, id)
+// 	}
+
+// 	rawMaps, err := getBatchHashMaps(ctx, redis.ScopeMember, c.client, keys)
 // 	if err != nil {
-// 		slog.WarnContext(ctx, "redis channel members batch cache read failure, falling back to database",
-// 			slog.Int("requested_count", len(channelIDs)),
-// 			slog.Any("error", err),
-// 		)
-// 		missing = channelIDs
-// 		found = make(map[uuid.UUID][]*channel.Member)
+// 		return nil, nil, err
 // 	}
 
-// 	if len(missing) == 0 {
-// 		return found, nil
-// 	}
+// 	found := make(map[uuid.UUID][]*channel.Member, len(validIDs))
+// 	var missing []uuid.UUID
 
-// 	missing = helpers.DedupeIDs(missing)
+// 	for i, rawMap := range rawMaps {
+// 		id := validIDs[i]
+// 		if len(rawMap) == 0 {
+// 			missing = append(missing, id)
+// 			continue
+// 		}
 
-// 	dbMembersMap, err := r.repo.GetBatchByChannelIDs(ctx, missing)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+// 		members := make([]*channel.Member, 0, len(rawMap))
+// 		corrupted := false
 
-// 	if len(dbMembersMap) > 0 {
-// 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 		defer cancel()
+// 		for _, rawJSON := range rawMap {
+// 			m, err := unmarshalMember([]byte(rawJSON))
+// 			if err != nil || m == nil {
+// 				_ = c.InvalidateChannel(ctx, id)
+// 				missing = append(missing, id)
+// 				corrupted = true
+// 				break
+// 			}
+// 			members = append(members, m)
+// 		}
 
-// 		if setErr := r.cache.SetBatchByChannelIDs(cacheCtx, dbMembersMap); setErr != nil {
-// 			slog.WarnContext(cacheCtx, "failed to populate channel members batch cache after database read",
-// 				slog.Int("missing_count", len(missing)),
-// 				slog.Any("error", setErr),
-// 			)
+// 		if !corrupted {
+// 			found[id] = members
 // 		}
 // 	}
 
-// 	for channelID, members := range dbMembersMap {
-// 		found[channelID] = members
-// 	}
-
-// 	return found, nil
+// 	return found, missing, nil
 // }
 
-// func (r *CachedMemberRepository) ListVisibleByUserID(
+// func (c *MemberCache) SetBatchByChannelIDs(
 // 	ctx context.Context,
-// 	userID uuid.UUID,
-// 	limit int,
-// ) ([]*channel.Member, error) {
-// 	if userID == uuid.Nil {
-// 		return []*channel.Member{}, nil
+// 	channelMembersMap map[uuid.UUID][]*channel.Member,
+// ) error {
+// 	if len(channelMembersMap) == 0 {
+// 		return nil
 // 	}
 
-// 	channelIDs, hit, err := r.channelCache.GetUserChannelIDs(ctx, userID)
-// 	if err != nil {
-// 		slog.WarnContext(ctx, "redis user channel index read failed, falling back to db",
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", err),
-// 		)
-// 	} else if hit {
-// 		if len(channelIDs) == 0 {
-// 			return []*channel.Member{}, nil
+// 	pipe := c.client.Pipeline()
+// 	hasOps := false
+
+// 	for channelID, members := range channelMembersMap {
+// 		if channelID == uuid.Nil || len(members) == 0 {
+// 			continue
 // 		}
 
-// 		targetIDs := channelIDs
-// 		if limit > 0 && len(targetIDs) > limit {
-// 			targetIDs = targetIDs[:limit]
-// 		}
-
-// 		foundMap, missingIDs, err := r.cache.GetBatchByChannelIDs(ctx, targetIDs)
-// 		if err == nil && len(missingIDs) == 0 {
-// 			result := make([]*channel.Member, 0, len(targetIDs))
-// 			for _, chID := range targetIDs {
-// 				members := foundMap[chID]
-// 				for _, m := range members {
-// 					if m != nil && m.UserID == userID {
-// 						result = append(result, m)
-// 						break
-// 					}
-// 				}
+// 		memberMap := make(map[string]any, len(members))
+// 		for _, m := range members {
+// 			if m == nil || m.UserID == uuid.Nil {
+// 				continue
 // 			}
-// 			return result, nil
+
+// 			mBytes, err := marshalMember(m)
+// 			if err != nil {
+// 				return err
+// 			}
+// 			memberMap[m.UserID.String()] = mBytes
 // 		}
 
-// 		if err != nil {
-// 			slog.WarnContext(ctx, "redis member batch read failed, falling back to db",
-// 				slog.String("user_id", userID.String()),
-// 				slog.Any("error", err),
-// 			)
+// 		if len(memberMap) > 0 {
+// 			pipe.HSet(ctx, channelMembersKey(channelID), memberMap)
+// 			hasOps = true
 // 		}
 // 	}
 
-// 	dbMembers, err := r.repo.ListVisibleByUserID(ctx, userID, limit)
-// 	if err != nil {
-// 		return nil, err
+// 	if !hasOps {
+// 		return nil
 // 	}
 
-// 	if len(dbMembers) == 0 {
-// 		return dbMembers, nil
+// 	if _, err := pipe.Exec(ctx); err != nil {
+// 		return redis.NewError(err, redis.ScopeMember)
 // 	}
 
-// 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 	defer cancel()
-
-// 	if backfillErr := r.cache.SetUserMembers(cacheCtx, userID, dbMembers); backfillErr != nil {
-// 		slog.WarnContext(cacheCtx, "failed to backfill user members cache",
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", backfillErr),
-// 		)
-// 	}
-
-// 	return dbMembers, nil
+// 	return nil
 // }

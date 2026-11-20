@@ -243,3 +243,46 @@ package channel
 // 	peerIDs = helpers.RemoveID(memberIDs, actorID)
 // 	return memberIDs, peerIDs
 // }
+
+// type MemberView struct {
+// 	ChannelID         uuid.UUID  `json:"channelId"`
+// 	UserID            uuid.UUID  `json:"userId"`
+// 	LastReadMessageID *uuid.UUID `json:"lastReadMessageId,omitempty"`
+// 	LastReadMessageAt time.Time  `json:"lastReadMessageAt"`
+// 	MutedUntil        *time.Time `json:"mutedUntil,omitempty"`
+// 	PinnedAt          *time.Time `json:"pinnedAt,omitempty"`
+// 	MentionCount      int        `json:"mentionCount"`
+// 	IsVisible         bool       `json:"isVisible"`
+// 	CreatedAt         time.Time  `json:"createdAt"`
+// 	UpdatedAt         time.Time  `json:"updatedAt"`
+// }
+
+// func ParseMemberView(m *Member) MemberView {
+// 	return MemberView{
+// 		ChannelID:         m.ChannelID,
+// 		UserID:            m.UserID,
+// 		LastReadMessageID: m.LastReadMessageID,
+// 		LastReadMessageAt: m.LastReadMessageAt,
+// 		MutedUntil:        m.MutedUntil,
+// 		PinnedAt:          m.PinnedAt,
+// 		MentionCount:      m.MentionCount,
+// 		IsVisible:         m.IsVisible,
+// 		CreatedAt:         m.CreatedAt,
+// 		UpdatedAt:         m.UpdatedAt,
+// 	}
+// }
+
+// func ParseMemberViewsMap(members []*Member) map[uuid.UUID]MemberView {
+// 	if len(members) == 0 {
+// 		return nil
+// 	}
+
+// 	views := make(map[uuid.UUID]MemberView, len(members))
+// 	for _, m := range members {
+// 		if m != nil {
+// 			views[m.UserID] = ParseMemberView(m)
+// 		}
+// 	}
+
+// 	return views
+// }

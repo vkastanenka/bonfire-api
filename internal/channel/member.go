@@ -1,111 +1,228 @@
 package channel
 
-// const (
-// 	MaxUserMemberships = 200
-// )
+import (
+	"time"
 
-// type Member struct {
-// 	ChannelID         uuid.UUID
-// 	UserID            uuid.UUID
-// 	LastReadMessageID *uuid.UUID
-// 	LastReadMessageAt time.Time
-// 	PinnedAt          *time.Time
-// 	MutedUntil        *time.Time
-// 	MentionCount      int
-// 	IsVisible         bool
-// 	CreatedAt         time.Time
-// 	UpdatedAt         time.Time
-// }
+	"github.com/google/uuid"
+)
 
-// func ReconstituteMember(
-// 	channelID uuid.UUID,
-// 	userID uuid.UUID,
-// 	lastReadMessageID *uuid.UUID,
-// 	lastReadMessageAt time.Time,
-// 	pinnedAt *time.Time,
-// 	mutedUntil *time.Time,
-// 	mentionCount int,
-// 	isVisible bool,
-// 	createdAt time.Time,
-// 	updatedAt time.Time,
-// ) *Member {
-// 	return &Member{
-// 		ChannelID:         channelID,
-// 		UserID:            userID,
-// 		LastReadMessageID: lastReadMessageID,
-// 		LastReadMessageAt: lastReadMessageAt,
-// 		PinnedAt:          pinnedAt,
-// 		MutedUntil:        mutedUntil,
-// 		MentionCount:      mentionCount,
-// 		IsVisible:         isVisible,
-// 		CreatedAt:         createdAt,
-// 		UpdatedAt:         updatedAt,
-// 	}
-// }
+const (
+	MaxUserMemberships = 200
+)
 
-// func NewMember(
-// 	channelID uuid.UUID,
-// 	userID uuid.UUID,
-// 	mentionCount int,
-// 	now time.Time,
-// ) *Member {
-// 	return ReconstituteMember(
-// 		channelID,
-// 		userID,
-// 		nil,
-// 		now,
-// 		nil,
-// 		nil,
-// 		mentionCount,
-// 		true,
-// 		now,
-// 		now,
-// 	)
-// }
+type Member struct {
+	ChannelID         uuid.UUID
+	UserID            uuid.UUID
+	LastReadMessageID *uuid.UUID
+	LastReadMessageAt time.Time
+	PinnedAt          *time.Time
+	MutedUntil        *time.Time
+	MentionCount      int
+	IsVisible         bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
 
-// func NewCreator(
-// 	channelID uuid.UUID,
-// 	userID uuid.UUID,
-// 	now time.Time,
-// ) *Member {
-// 	return NewMember(channelID, userID, 0, now)
-// }
+func NewMember(
+	channelID uuid.UUID,
+	userID uuid.UUID,
+	mentionCount int,
+	now time.Time,
+) *Member {
+	nowUTC := now.UTC()
+	return &Member{
+		ChannelID:         channelID,
+		UserID:            userID,
+		LastReadMessageAt: nowUTC,
+		MentionCount:      mentionCount,
+		IsVisible:         true,
+		CreatedAt:         nowUTC,
+		UpdatedAt:         nowUTC,
+	}
+}
 
-// func NewPeer(
-// 	channelID uuid.UUID,
-// 	userID uuid.UUID,
-// 	now time.Time,
-// ) *Member {
-// 	return NewMember(channelID, userID, 1, now)
-// }
+func NewCreatorMember(
+	channelID uuid.UUID,
+	userID uuid.UUID,
+	now time.Time,
+) *Member {
+	return NewMember(channelID, userID, 0, now)
+}
 
-// func NewPeers(
-// 	channelID uuid.UUID,
-// 	userIDs []uuid.UUID,
-// 	now time.Time,
-// ) []*Member {
-// 	peers := make([]*Member, 0, len(userIDs))
-// 	for _, userID := range userIDs {
-// 		peers = append(peers, NewPeer(channelID, userID, now))
-// 	}
-// 	return peers
-// }
+func NewPeerMember(
+	channelID uuid.UUID,
+	userID uuid.UUID,
+	now time.Time,
+) *Member {
+	return NewMember(channelID, userID, 1, now)
+}
 
-// func NewMembers(
-// 	channelID uuid.UUID,
-// 	creatorID uuid.UUID,
-// 	peerIDs []uuid.UUID,
-// 	now time.Time,
-// ) []*Member {
-// 	members := make([]*Member, 0, len(peerIDs)+1)
-// 	members = append(members, NewCreator(channelID, creatorID, now))
+func NewPeerMembers(
+	channelID uuid.UUID,
+	userIDs []uuid.UUID,
+	now time.Time,
+) []*Member {
+	peers := make([]*Member, 0, len(userIDs))
+	for _, userID := range userIDs {
+		peers = append(peers, NewPeerMember(channelID, userID, now))
+	}
+	return peers
+}
 
-// 	for _, peerID := range peerIDs {
-// 		members = append(members, NewPeer(channelID, peerID, now))
-// 	}
+func NewMembers(
+	channelID uuid.UUID,
+	creatorID uuid.UUID,
+	peerIDs []uuid.UUID,
+	now time.Time,
+) []*Member {
+	members := make([]*Member, 0, len(peerIDs)+1)
+	members = append(members, NewCreatorMember(channelID, creatorID, now))
 
-// 	return members
-// }
+	for _, peerID := range peerIDs {
+		members = append(members, NewPeerMember(channelID, peerID, now))
+	}
+
+	return members
+}
+
+func ReconstituteMember(
+	channelID uuid.UUID,
+	userID uuid.UUID,
+	lastReadMessageID *uuid.UUID,
+	lastReadMessageAt time.Time,
+	pinnedAt *time.Time,
+	mutedUntil *time.Time,
+	mentionCount int,
+	isVisible bool,
+	createdAt time.Time,
+	updatedAt time.Time,
+) *Member {
+	return &Member{
+		ChannelID:         channelID,
+		UserID:            userID,
+		LastReadMessageID: lastReadMessageID,
+		LastReadMessageAt: lastReadMessageAt,
+		PinnedAt:          pinnedAt,
+		MutedUntil:        mutedUntil,
+		MentionCount:      mentionCount,
+		IsVisible:         isVisible,
+		CreatedAt:         createdAt,
+		UpdatedAt:         updatedAt,
+	}
+}
+
+func (m *Member) IsPinned() bool { return m.PinnedAt != nil }
+
+func (m *Member) IsMuted(now time.Time) bool {
+	if m.MutedUntil == nil {
+		return false
+	}
+	return now.UTC().Before(*m.MutedUntil)
+}
+
+func (m *Member) Pin(now time.Time) {
+	nowUTC := now.UTC()
+	m.PinnedAt = &nowUTC
+	m.touch(nowUTC)
+}
+
+func (m *Member) Unpin(now time.Time) {
+	m.PinnedAt = nil
+	m.touch(now)
+}
+
+func (m *Member) Mute(until *time.Time, now time.Time) {
+	if until != nil {
+		untilUTC := until.UTC()
+		m.MutedUntil = &untilUTC
+	} else {
+		m.MutedUntil = nil
+	}
+	m.touch(now)
+}
+
+func (m *Member) SetVisible(visible bool, now time.Time) {
+	m.IsVisible = visible
+	m.touch(now)
+}
+
+func (m *Member) MarkRead(messageID *uuid.UUID, at time.Time) {
+	atUTC := at.UTC()
+	m.LastReadMessageID = messageID
+	m.LastReadMessageAt = atUTC
+	m.MentionCount = 0
+	m.touch(atUTC)
+}
+
+func (m *Member) IncrementMention(now time.Time) {
+	m.MentionCount++
+	m.touch(now)
+}
+
+func (m *Member) touch(at time.Time) {
+	m.UpdatedAt = at.UTC()
+}
+
+type MemberDTO struct {
+	ChannelID         uuid.UUID  `json:"channelId"`
+	UserID            uuid.UUID  `json:"userId"`
+	LastReadMessageID *uuid.UUID `json:"lastReadMessageId,omitempty"`
+	LastReadMessageAt time.Time  `json:"lastReadMessageAt"`
+	MutedUntil        *time.Time `json:"mutedUntil,omitempty"`
+	PinnedAt          *time.Time `json:"pinnedAt,omitempty"`
+	MentionCount      int        `json:"mentionCount"`
+	IsVisible         bool       `json:"isVisible"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+}
+
+func NewMemberDTO(m *Member) *MemberDTO {
+	if m == nil {
+		return nil
+	}
+	return &MemberDTO{
+		ChannelID:         m.ChannelID,
+		UserID:            m.UserID,
+		LastReadMessageID: m.LastReadMessageID,
+		LastReadMessageAt: m.LastReadMessageAt,
+		MutedUntil:        m.MutedUntil,
+		PinnedAt:          m.PinnedAt,
+		MentionCount:      m.MentionCount,
+		IsVisible:         m.IsVisible,
+		CreatedAt:         m.CreatedAt,
+		UpdatedAt:         m.UpdatedAt,
+	}
+}
+
+func NewMemberDTOs(members []*Member) []MemberDTO {
+	if len(members) == 0 {
+		return nil
+	}
+
+	dtos := make([]MemberDTO, 0, len(members))
+	for _, m := range members {
+		if dto := NewMemberDTO(m); dto != nil {
+			dtos = append(dtos, *dto)
+		}
+	}
+
+	return dtos
+}
+
+func NewMemberDTOMap(members []*Member) map[uuid.UUID]MemberDTO {
+	if len(members) == 0 {
+		return make(map[uuid.UUID]MemberDTO)
+	}
+
+	dtos := make(map[uuid.UUID]MemberDTO, len(members))
+	for _, m := range members {
+		if dto := NewMemberDTO(m); dto != nil {
+			dtos[m.UserID] = *dto
+		}
+	}
+
+	return dtos
+}
 
 // func getChannels(channelMap map[uuid.UUID]*Channel) []*Channel {
 // 	channels := make([]*Channel, 0, len(channelMap))
@@ -242,47 +359,4 @@ package channel
 // 	memberIDs = helpers.DedupeIDs(append(rawMemberIDs, actorID))
 // 	peerIDs = helpers.RemoveID(memberIDs, actorID)
 // 	return memberIDs, peerIDs
-// }
-
-// type MemberView struct {
-// 	ChannelID         uuid.UUID  `json:"channelId"`
-// 	UserID            uuid.UUID  `json:"userId"`
-// 	LastReadMessageID *uuid.UUID `json:"lastReadMessageId,omitempty"`
-// 	LastReadMessageAt time.Time  `json:"lastReadMessageAt"`
-// 	MutedUntil        *time.Time `json:"mutedUntil,omitempty"`
-// 	PinnedAt          *time.Time `json:"pinnedAt,omitempty"`
-// 	MentionCount      int        `json:"mentionCount"`
-// 	IsVisible         bool       `json:"isVisible"`
-// 	CreatedAt         time.Time  `json:"createdAt"`
-// 	UpdatedAt         time.Time  `json:"updatedAt"`
-// }
-
-// func ParseMemberView(m *Member) MemberView {
-// 	return MemberView{
-// 		ChannelID:         m.ChannelID,
-// 		UserID:            m.UserID,
-// 		LastReadMessageID: m.LastReadMessageID,
-// 		LastReadMessageAt: m.LastReadMessageAt,
-// 		MutedUntil:        m.MutedUntil,
-// 		PinnedAt:          m.PinnedAt,
-// 		MentionCount:      m.MentionCount,
-// 		IsVisible:         m.IsVisible,
-// 		CreatedAt:         m.CreatedAt,
-// 		UpdatedAt:         m.UpdatedAt,
-// 	}
-// }
-
-// func ParseMemberViewsMap(members []*Member) map[uuid.UUID]MemberView {
-// 	if len(members) == 0 {
-// 		return nil
-// 	}
-
-// 	views := make(map[uuid.UUID]MemberView, len(members))
-// 	for _, m := range members {
-// 		if m != nil {
-// 			views[m.UserID] = ParseMemberView(m)
-// 		}
-// 	}
-
-// 	return views
 // }

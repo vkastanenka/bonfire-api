@@ -35,6 +35,11 @@ func ErrMaxFriendsReached() *errs.Error {
 		Reason("RELATION_MAX_FRIENDS_REACHED")
 }
 
+func ErrMaxBlockedReached() *errs.Error {
+	return errs.ResourceExhausted("Maximum block limit reached.").
+		Reason("RELATION_MAX_BLOCKS_REACHED")
+}
+
 func ErrBlockedUser() *errs.Error {
 	return errs.PermissionDenied("Action cannot be performed on a blocked relationship.").
 		Reason("RELATION_BLOCKED_USER")

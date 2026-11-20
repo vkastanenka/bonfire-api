@@ -4,6 +4,11 @@ import (
 	"bonfire-api/internal/pkg/errs"
 )
 
+func ErrIDGenerateFailed() *errs.Error {
+	return errs.Internal("Failed to generate ID.").
+		Reason("ID_GENERATE_FAILED")
+}
+
 func ErrPeerIDInvalid() *errs.Error {
 	return errs.InvalidArgument("Invalid peer ID format.").
 		FieldViolation("id", "Invalid ID.", "INVALID_ID")

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"bonfire-api/internal/appctx"
+	"bonfire-api/internal/channel"
 	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/httpio"
 	"bonfire-api/internal/user"
@@ -31,30 +32,25 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Delete("/relations/{id}", httpio.ToHTTPErr(h.deleteRelation))
 }
 
-type peerIDPath struct {
-	ID uuid.UUID `path:"id" validate:"required"`
-}
-
 func (h *Handler) sendFriendRequest(w http.ResponseWriter, r *http.Request) error {
 	userID, peerID, err := h.bindPeerRequest(r)
 	if err != nil {
 		return err
 	}
 
-	if err := h.service.TransitionPending(r.Context(), userID, peerID); err != nil {
+	result, err := h.service.TransitionPending(r.Context(), userID, peerID)
+	if err != nil {
 		return err
 	}
 
-	httpio.RespondNoContent(w)
-	return nil
-}
+	resp := newFriendAddedResponse(result)
+	if resp == nil {
+		httpio.RespondNoContent(w)
+		return nil
+	}
 
-type acceptFriendRequestResponse struct {
-	// Channel
-	// UserMembership
-	// PeerMembership
-	PeerUser     *user.DTO        `json:"peerUser,omitempty"`
-	PeerPresence gateway.Presence `json:"peerPresence"`
+	httpio.RespondOK(w, r, resp)
+	return nil
 }
 
 func (h *Handler) acceptFriendRequest(w http.ResponseWriter, r *http.Request) error {
@@ -68,19 +64,7 @@ func (h *Handler) acceptFriendRequest(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
-	var peerDTO *user.DTO
-	var peerPresence gateway.Presence
-	if result != nil {
-		peerPresence = result.PeerPresence
-		if result.PeerUser != nil {
-			peerDTO = user.NewDTO(result.PeerUser)
-		}
-	}
-
-	httpio.RespondOK(w, r, &acceptFriendRequestResponse{
-		PeerUser:     peerDTO,
-		PeerPresence: peerPresence,
-	})
+	httpio.RespondOK(w, r, newFriendAddedResponse(result))
 	return nil
 }
 
@@ -124,4 +108,31 @@ func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, e
 	}
 
 	return claims.UserID, path.ID, nil
+}
+
+type peerIDPath struct {
+	ID uuid.UUID `path:"id" validate:"required"`
+}
+
+type friendAddedResponse struct {
+	Channel      *channel.ChannelDTO `json:"channel"`
+	Member       *channel.MemberDTO  `json:"member"`
+	PeerUser     *user.DTO           `json:"peerUser"`
+	PeerPresence gateway.Presence    `json:"peerPresence"`
+}
+
+func newFriendAddedResponse(result *TransitionFriendsResult) *friendAddedResponse {
+	if result == nil {
+		return nil
+	}
+	if result.Channel == nil && result.Member == nil && result.PeerUser == nil {
+		return nil
+	}
+
+	return &friendAddedResponse{
+		Channel:      channel.NewDTO(result.Channel),
+		Member:       channel.NewMemberDTO(result.Member),
+		PeerUser:     user.NewDTO(result.PeerUser),
+		PeerPresence: result.PeerPresence,
+	}
 }

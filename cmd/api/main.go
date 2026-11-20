@@ -9,6 +9,7 @@ import (
 
 	"bonfire-api/internal/auth"
 	"bonfire-api/internal/bootstrap"
+	"bonfire-api/internal/channel"
 	"bonfire-api/internal/config"
 	"bonfire-api/internal/db"
 	"bonfire-api/internal/email"
@@ -20,6 +21,7 @@ import (
 	"bonfire-api/internal/pkg/logger"
 	"bonfire-api/internal/pkg/validator"
 	"bonfire-api/internal/redis"
+	"bonfire-api/internal/relation"
 	"bonfire-api/internal/shield"
 	"bonfire-api/internal/token"
 	"bonfire-api/internal/user"
@@ -121,10 +123,14 @@ func run(cfg *config.Config) error {
 	sessionCache := auth.NewSessionCache(cacheClient)
 	shieldCache := shield.NewCache(cacheClient)
 	tokenCache := token.NewCache(cacheClient)
+	relationCache := relation.NewCache(cacheClient)
 	userCache := user.NewCache(cacheClient)
 
+	channelRepo := channel.NewChannelRepository(dbStore)
+	memberRepo := channel.NewMemberRepository(dbStore)
 	outboxRepo := outbox.NewRepository(dbStore)
 	sessionRepo := auth.NewSessionRepository(dbStore)
+	relationRepo := relation.NewRepository(dbStore)
 	userRepo := user.NewRepository(dbStore)
 
 	cachedUserRepo := user.NewCachedRepository(userCache, userRepo)
@@ -155,6 +161,17 @@ func run(cfg *config.Config) error {
 		broadcaster,
 		pubsub,
 	)
+	relationSvc := relation.NewService(
+		relationCache,
+		relationRepo,
+		broadcaster,
+		gatewayCache,
+		channelRepo,
+		memberRepo,
+		userRepo,
+		cachedUserRepo,
+		dbStore,
+	)
 	userSvc := user.NewService(
 		userCache,
 		userRepo,
@@ -170,6 +187,7 @@ func run(cfg *config.Config) error {
 	authHandler := auth.NewHandler(authSvc, bind)
 	bootstrapHandler := bootstrap.NewHandler(bootstrapSvc, bind)
 	healthHandler := health.NewHandler(cacheClient, dbClient)
+	relationHandler := relation.NewHandler(relationSvc, bind)
 	userHandler := user.NewHandler(userSvc, bind)
 
 	wsHub := gateway.NewHub(gatewaySvc)
@@ -203,6 +221,7 @@ func run(cfg *config.Config) error {
 			Bootstrap: bootstrapHandler,
 			Gateway:   gatewayHandler,
 			Health:    healthHandler,
+			Relation:  relationHandler,
 			User:      userHandler,
 		},
 	}

@@ -1,6 +1,7 @@
 package relation
 
 import (
+	"bonfire-api/internal/channel"
 	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/pkg/errs"
 	"bonfire-api/internal/user"
@@ -13,11 +14,20 @@ import (
 
 const broadcastTimeout = 2 * time.Second
 
+type TransitionFriendsResult struct {
+	Channel      *channel.Channel
+	Member       *channel.Member
+	PeerUser     *user.User
+	PeerPresence gateway.Presence
+}
+
 type Service struct {
 	cache          *Cache
 	repo           *Repository
 	broadcaster    Broadcaster
 	gatewayCache   GatewayCache
+	channelRepo    ChannelRepository
+	memberRepo     MemberRepository
 	userRepo       UserRepository
 	cachedUserRepo CachedUserRepository
 	tx             TX
@@ -28,6 +38,8 @@ func NewService(
 	repo *Repository,
 	broadcaster Broadcaster,
 	gatewayCache GatewayCache,
+	channelRepo ChannelRepository,
+	memberRepo MemberRepository,
 	userRepo UserRepository,
 	cachedUserRepo CachedUserRepository,
 	tx TX,
@@ -37,22 +49,31 @@ func NewService(
 		repo:           repo,
 		broadcaster:    broadcaster,
 		gatewayCache:   gatewayCache,
+		channelRepo:    channelRepo,
+		memberRepo:     memberRepo,
 		userRepo:       userRepo,
 		cachedUserRepo: cachedUserRepo,
 		tx:             tx,
 	}
 }
 
-func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerID uuid.UUID) error {
+func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerID uuid.UUID) (*TransitionFriendsResult, error) {
 	if userID == peerID {
-		return ErrCannotRequestSelf()
+		return nil, ErrCannotRequestSelf()
 	}
 
 	u1, u2 := sortIDPair(userID, peerID)
 	var savedRel *Relation
+	var createdCh *createdDirectChannel
+
+	chID, err := uuid.NewV7()
+	if err != nil {
+		return nil, ErrIDGenerateFailed()
+	}
+
 	now := time.Now()
 
-	err := s.tx.ExecTx(ctx, func(txCtx context.Context) error {
+	err = s.tx.ExecTx(ctx, func(txCtx context.Context) error {
 		userFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, userID)
 		if err != nil {
 			return err
@@ -96,7 +117,13 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 					return nil
 				}
 
-				// TODO: Accept pending -> transition to TypeFriends + assign channelID, then Save
+				acceptedRel, created, err := s.acceptPendingRelation(txCtx, rel, chID, userID, peerID, now)
+				if err != nil {
+					return err
+				}
+
+				savedRel = acceptedRel
+				createdCh = created
 				return nil
 			}
 			return nil
@@ -123,11 +150,11 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 		return err
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if savedRel == nil {
-		return nil
+		return nil, nil
 	}
 
 	switch savedRel.Type {
@@ -141,29 +168,40 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 				slog.String("peer_id", peerID.String()),
 				slog.Any("error", err),
 			)
-			return nil
+			return nil, nil
 		}
 
 		s.broadcastToUser(
 			ctx,
 			peerID,
 			MessageFriendRequestSent,
-			newFriendRequestSentPayload(user.NewDTO(actor)),
+			newFriendRequestSentPayload(actor),
 			"failed to broadcast new pending relation",
 			userID,
 			peerID,
 		)
+		return nil, nil
+
 	case TypeFriends:
-		s.invalidateCache(ctx, "new_friends", peerID, userID, s.cache.DeleteNewFriendsPair)
-		// TODO: Broadcast MessageFriendAdded when pending acceptance is wired up
+		var ch *channel.Channel
+		var actorMember, peerMember *channel.Member
+		if createdCh != nil {
+			ch = createdCh.channel
+			actorMember = createdCh.actorMember
+			peerMember = createdCh.peerMember
+		}
+
+		peerUser, peerPresence := s.onFriendAdded(ctx, userID, peerID, ch, actorMember, peerMember)
+
+		return &TransitionFriendsResult{
+			Channel:      ch,
+			Member:       actorMember,
+			PeerUser:     peerUser,
+			PeerPresence: peerPresence,
+		}, nil
 	}
 
-	return nil
-}
-
-type TransitionFriendsResult struct {
-	PeerUser     *user.User
-	PeerPresence gateway.Presence
+	return nil, nil
 }
 
 func (s *Service) TransitionFriends(ctx context.Context, userID, peerID uuid.UUID) (*TransitionFriendsResult, error) {
@@ -172,9 +210,16 @@ func (s *Service) TransitionFriends(ctx context.Context, userID, peerID uuid.UUI
 	}
 
 	u1, u2 := sortIDPair(userID, peerID)
+	var createdCh *createdDirectChannel
+
+	chID, err := uuid.NewV7()
+	if err != nil {
+		return nil, ErrIDGenerateFailed()
+	}
+
 	now := time.Now()
 
-	err := s.tx.ExecTx(ctx, func(txCtx context.Context) error {
+	err = s.tx.ExecTx(ctx, func(txCtx context.Context) error {
 		userFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, userID)
 		if err != nil {
 			return err
@@ -207,30 +252,31 @@ func (s *Service) TransitionFriends(ctx context.Context, userID, peerID uuid.UUI
 			return ErrCannotAcceptFriendRequest()
 		}
 
-		// TODO: Create new channel and channel members, then pass channelID to rel.Accept.
-		rel.Accept(userID, uuid.Nil, now)
+		_, created, err := s.acceptPendingRelation(txCtx, rel, chID, userID, peerID, now)
+		if err != nil {
+			return err
+		}
 
-		_, err = s.repo.Save(txCtx, rel)
-		return err
+		createdCh = created
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	s.invalidateCache(ctx, "new_friends", peerID, userID, s.cache.DeleteNewFriendsPair)
+	var ch *channel.Channel
+	var actorMember, peerMember *channel.Member
+	if createdCh != nil {
+		ch = createdCh.channel
+		actorMember = createdCh.actorMember
+		peerMember = createdCh.peerMember
+	}
 
-	ids := []uuid.UUID{userID, peerID}
-	users, presences := s.loadUsersAndPresences(ctx, ids, userID, peerID)
-
-	actorUser := users[userID]
-	actorPresence := resolvePresence(presences, userID)
-	s.broadcastFriendAdded(ctx, peerID, actorUser, actorPresence, userID, peerID, "peer")
-
-	peerUser := users[peerID]
-	peerPresence := resolvePresence(presences, peerID)
-	s.broadcastFriendAdded(ctx, userID, peerUser, peerPresence, userID, peerID, "actor")
+	peerUser, peerPresence := s.onFriendAdded(ctx, userID, peerID, ch, actorMember, peerMember)
 
 	return &TransitionFriendsResult{
+		Channel:      ch,
+		Member:       actorMember,
 		PeerUser:     peerUser,
 		PeerPresence: peerPresence,
 	}, nil
@@ -429,6 +475,72 @@ func (s *Service) DeleteByUserID(ctx context.Context, userID, peerID uuid.UUID) 
 	return nil
 }
 
+func (s *Service) acceptPendingRelation(
+	txCtx context.Context,
+	rel *Relation,
+	chID, actorID, peerID uuid.UUID,
+	now time.Time,
+) (*Relation, *createdDirectChannel, error) {
+	created, err := s.createDirectChannelWithMembers(txCtx, chID, actorID, peerID, now)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rel.Accept(actorID, created.channel.ID, now)
+	savedRel, err := s.repo.Save(txCtx, rel)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return savedRel, created, nil
+}
+
+func (s *Service) createDirectChannelWithMembers(
+	txCtx context.Context,
+	chID, actorID, peerID uuid.UUID,
+	now time.Time,
+) (*createdDirectChannel, error) {
+	ch := channel.NewDirect(chID, now)
+	actorMember := channel.NewCreatorMember(chID, actorID, now)
+	peerMember := channel.NewPeerMember(chID, peerID, now)
+
+	if _, err := s.channelRepo.Create(txCtx, ch); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.memberRepo.CreateBatch(txCtx, []*channel.Member{actorMember, peerMember}); err != nil {
+		return nil, err
+	}
+
+	return &createdDirectChannel{
+		channel:     ch,
+		actorMember: actorMember,
+		peerMember:  peerMember,
+	}, nil
+}
+
+func (s *Service) onFriendAdded(
+	ctx context.Context,
+	userID, peerID uuid.UUID,
+	ch *channel.Channel,
+	actorMember, peerMember *channel.Member,
+) (*user.User, gateway.Presence) {
+	s.invalidateCache(ctx, "new_friends", peerID, userID, s.cache.DeleteNewFriendsPair)
+
+	ids := []uuid.UUID{userID, peerID}
+	users, presences := s.loadUsersAndPresences(ctx, ids, userID, peerID)
+
+	actorUser := users[userID]
+	actorPresence := resolvePresence(presences, userID)
+	s.broadcastFriendAdded(ctx, peerID, actorUser, actorPresence, ch, peerMember, userID, peerID, "peer")
+
+	peerUser := users[peerID]
+	peerPresence := resolvePresence(presences, peerID)
+	s.broadcastFriendAdded(ctx, userID, peerUser, peerPresence, ch, actorMember, userID, peerID, "actor")
+
+	return peerUser, peerPresence
+}
+
 func (s *Service) canAddFriendWithPeer(txCtx context.Context, peerID uuid.UUID) (bool, error) {
 	peer, err := s.userRepo.Get(txCtx, peerID)
 	if err != nil {
@@ -483,6 +595,8 @@ func (s *Service) broadcastFriendAdded(
 	recipientID uuid.UUID,
 	friendUser *user.User,
 	friendPresence gateway.Presence,
+	ch *channel.Channel,
+	member *channel.Member,
 	logUserID, logPeerID uuid.UUID,
 	targetLabel string,
 ) {
@@ -494,7 +608,7 @@ func (s *Service) broadcastFriendAdded(
 		ctx,
 		recipientID,
 		MessageFriendAdded,
-		newFriendAddedPayload(user.NewDTO(friendUser), friendPresence),
+		newFriendAddedPayload(friendUser, friendPresence, ch, member),
 		"failed to broadcast new friends relation to "+targetLabel,
 		logUserID,
 		logPeerID,
@@ -525,22 +639,6 @@ func (s *Service) broadcastToUser(
 	}
 }
 
-func resolvePendingPair(relActorID, userID, peerID uuid.UUID) (senderID, recipientID uuid.UUID) {
-	if relActorID == peerID {
-		return peerID, userID
-	}
-	return userID, peerID
-}
-
-func resolvePresence(presences map[uuid.UUID]gateway.Presence, id uuid.UUID) gateway.Presence {
-	if p, ok := presences[id]; ok && p != gateway.PresenceUnknown {
-		return p
-	}
-	return gateway.PresenceOffline
-}
-
-type pairDeleteFunc func(ctx context.Context, actorID, peerID uuid.UUID) error
-
 func (s *Service) invalidateCache(
 	ctx context.Context,
 	kind string,
@@ -562,4 +660,26 @@ func (s *Service) invalidateCache(
 			slog.Any("error", err),
 		)
 	}
+}
+
+type createdDirectChannel struct {
+	channel     *channel.Channel
+	actorMember *channel.Member
+	peerMember  *channel.Member
+}
+
+type pairDeleteFunc func(ctx context.Context, actorID, peerID uuid.UUID) error
+
+func resolvePendingPair(relActorID, userID, peerID uuid.UUID) (senderID, recipientID uuid.UUID) {
+	if relActorID == peerID {
+		return peerID, userID
+	}
+	return userID, peerID
+}
+
+func resolvePresence(presences map[uuid.UUID]gateway.Presence, id uuid.UUID) gateway.Presence {
+	if p, ok := presences[id]; ok && p != gateway.PresenceUnknown {
+		return p
+	}
+	return gateway.PresenceOffline
 }

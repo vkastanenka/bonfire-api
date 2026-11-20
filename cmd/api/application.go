@@ -12,6 +12,7 @@ import (
 	"bonfire-api/internal/config"
 	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/health"
+	"bonfire-api/internal/relation"
 	"bonfire-api/internal/token"
 	"bonfire-api/internal/user"
 
@@ -23,6 +24,7 @@ type Handlers struct {
 	Bootstrap *bootstrap.Handler
 	Gateway   *gateway.Handler
 	Health    *health.Handler
+	Relation  *relation.Handler
 	User      *user.Handler
 }
 

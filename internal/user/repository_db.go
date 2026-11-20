@@ -77,6 +77,10 @@ func (r *Repository) GetByUsername(ctx context.Context, username string) (*User,
 }
 
 func (r *Repository) GetBatch(ctx context.Context, ids []uuid.UUID) ([]*User, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
 	rows, err := r.store.UserGetBatch(ctx, db.ToUUIDs(ids))
 	if err != nil {
 		return nil, db.NewError(err, db.ResourceUser)

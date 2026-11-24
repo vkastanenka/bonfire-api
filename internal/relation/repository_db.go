@@ -87,6 +87,14 @@ func (r *Repository) ListTypeByUserID(
 	return relationsFromRows(rows), nil
 }
 
+func (r *Repository) ListPendingsByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+	limit int,
+) ([]*Relation, error) {
+	return r.ListTypeByUserID(ctx, userID, TypePending, limit)
+}
+
 func (r *Repository) ListFriendsByUserID(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -129,22 +137,6 @@ func (r *Repository) ListOutgoingTypeByUserID(
 	}
 
 	return relationsFromRows(rows), nil
-}
-
-func (r *Repository) ListIncomingPendingsByUserID(
-	ctx context.Context,
-	userID uuid.UUID,
-	limit int,
-) ([]*Relation, error) {
-	return r.ListIncomingTypeByUserID(ctx, userID, TypePending, limit)
-}
-
-func (r *Repository) ListOutgoingPendingsByUserID(
-	ctx context.Context,
-	userID uuid.UUID,
-	limit int,
-) ([]*Relation, error) {
-	return r.ListOutgoingTypeByUserID(ctx, userID, TypePending, limit)
 }
 
 func (r *Repository) ListIncomingBlocksByUserID(

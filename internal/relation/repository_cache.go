@@ -20,6 +20,17 @@ func NewCachedRepository(cache *Cache, repo *Repository) *CachedRepository {
 	}
 }
 
+func (r *CachedRepository) GetPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	return r.getCachedIDs(
+		ctx,
+		userID,
+		"pendings",
+		r.cache.GetPendingIDs,
+		r.repo.ListPendingsByUserID,
+		r.cache.SetPendingIDs,
+	)
+}
+
 func (r *CachedRepository) GetFriendIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	return r.getCachedIDs(
 		ctx,
@@ -28,28 +39,6 @@ func (r *CachedRepository) GetFriendIDs(ctx context.Context, userID uuid.UUID) (
 		r.cache.GetFriendIDs,
 		r.repo.ListFriendsByUserID,
 		r.cache.SetFriendIDs,
-	)
-}
-
-func (r *CachedRepository) GetIncomingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return r.getCachedIDs(
-		ctx,
-		userID,
-		"incoming_pendings",
-		r.cache.GetIncomingPendingIDs,
-		r.repo.ListIncomingPendingsByUserID,
-		r.cache.SetIncomingPendingIDs,
-	)
-}
-
-func (r *CachedRepository) GetOutgoingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return r.getCachedIDs(
-		ctx,
-		userID,
-		"outgoing_pendings",
-		r.cache.GetOutgoingPendingIDs,
-		r.repo.ListOutgoingPendingsByUserID,
-		r.cache.SetOutgoingPendingIDs,
 	)
 }
 

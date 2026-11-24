@@ -34,6 +34,22 @@ func (s *Service) Bootstrap(ctx context.Context, p Params) (*Result, error) {
 		return nil, err
 	}
 
+	// friend ids
+
+	// incoming friend request ids
+
+	// outgoing block ids
+
+	// channels
+
+	// channel memberships
+
+	// deduplicate user ids
+
+	// user models
+
+	// user presences
+
 	return &Result{
 		User: user,
 	}, nil

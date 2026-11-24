@@ -263,8 +263,8 @@ func toBytes(raw any) ([]byte, bool) {
 	}
 }
 
-// getSetIDs retrieves members from a Redis Set key and parses them into uuid.UUID slices.
-func getSetIDs(
+// GetSetIDs retrieves members from a Redis Set key and parses them into uuid.UUID slices.
+func GetSetIDs(
 	ctx context.Context,
 	resource Resource,
 	client redisdriver.Cmdable,
@@ -293,8 +293,8 @@ func getSetIDs(
 	return ids, nil
 }
 
-// setSetIDs atomically replaces a Redis Set key in a pipeline.
-func setSetIDs(
+// SetSetIDs atomically replaces a Redis Set key in a pipeline.
+func SetSetIDs(
 	ctx context.Context,
 	resource Resource,
 	client redisdriver.Cmdable,

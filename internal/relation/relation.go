@@ -164,11 +164,30 @@ func (r *Relation) touch(at time.Time) {
 	r.UpdatedAt = at
 }
 
-func sortIDPair(id1, id2 uuid.UUID) (uuid.UUID, uuid.UUID) {
-	if bytes.Compare(id1[:], id2[:]) < 0 {
-		return id1, id2
+func ExtractPeerIDs(actorID uuid.UUID, rels []*Relation) []uuid.UUID {
+	if len(rels) == 0 {
+		return nil
 	}
-	return id2, id1
+
+	peerIDs := make([]uuid.UUID, 0, len(rels))
+	for _, rel := range rels {
+		if rel == nil {
+			continue
+		}
+
+		switch actorID {
+		case rel.User1ID:
+			peerIDs = append(peerIDs, rel.User2ID)
+		case rel.User2ID:
+			peerIDs = append(peerIDs, rel.User1ID)
+		}
+	}
+
+	if len(peerIDs) == 0 {
+		return nil
+	}
+
+	return peerIDs
 }
 
 func sortFriendIDs(friendIDs []uuid.UUID, users map[uuid.UUID]*user.User) {
@@ -198,4 +217,11 @@ func sortFriendIDs(friendIDs []uuid.UUID, users map[uuid.UUID]*user.User) {
 
 		return bytes.Compare(aID[:], bID[:])
 	})
+}
+
+func sortIDPair(id1, id2 uuid.UUID) (uuid.UUID, uuid.UUID) {
+	if bytes.Compare(id1[:], id2[:]) < 0 {
+		return id1, id2
+	}
+	return id2, id1
 }

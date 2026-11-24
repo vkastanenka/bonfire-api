@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"bonfire-api/internal/pkg/errs"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -161,6 +163,32 @@ func (m *Member) IncrementMention(now time.Time) {
 
 func (m *Member) touch(at time.Time) {
 	m.UpdatedAt = at.UTC()
+}
+
+func UnmarshalMember(data []byte) (*Member, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	var m Member
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+
+	return &m, nil
+}
+
+func MarshalMember(m *Member) ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+
+	bytes, err := json.Marshal(m)
+	if err != nil {
+		return nil, errs.Internal("Failed to marshal channel member json.").Wrap(err)
+	}
+
+	return bytes, nil
 }
 
 type MemberDTO struct {

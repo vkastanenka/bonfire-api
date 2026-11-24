@@ -1,10 +1,8 @@
 package channel
 
 import (
-	"bonfire-api/internal/pkg/errs"
 	"bonfire-api/internal/redis"
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,7 +74,7 @@ func (c *MemberCache) GetVisibleByUserID(ctx context.Context, userID uuid.UUID) 
 		redis.ResourceMember,
 		UserChannelMembersKey(userID),
 		func(raw string) (*Member, error) {
-			return unmarshalMember([]byte(raw))
+			return UnmarshalMember([]byte(raw))
 		},
 	)
 	if err != nil {
@@ -106,7 +104,7 @@ func (c *MemberCache) SetVisibleByUserID(
 		members,
 		UserChannelsMembersTTL,
 		uuid.UUID.String,
-		marshalMember,
+		MarshalMember,
 	)
 }
 
@@ -126,32 +124,6 @@ func (c *MemberCache) setIDs(
 	ttl time.Duration,
 ) error {
 	return redis.SetSetIDs(ctx, c.client, redis.ResourceMember, keyFn(id), ids, ttl)
-}
-
-func unmarshalMember(data []byte) (*Member, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-
-	var m Member
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, err
-	}
-
-	return &m, nil
-}
-
-func marshalMember(m *Member) ([]byte, error) {
-	if m == nil {
-		return nil, nil
-	}
-
-	bytes, err := json.Marshal(m)
-	if err != nil {
-		return nil, errs.Internal("Failed to marshal channel member json.").Wrap(err)
-	}
-
-	return bytes, nil
 }
 
 // func (c *MemberCache) Invalidate(ctx context.Context, channelID, userID uuid.UUID) error {
@@ -333,7 +305,7 @@ func marshalMember(m *Member) ([]byte, error) {
 // 		corrupted := false
 
 // 		for _, rawJSON := range rawMap {
-// 			m, err := unmarshalMember([]byte(rawJSON))
+// 			m, err := UnmarshalMember([]byte(rawJSON))
 // 			if err != nil || m == nil {
 // 				_ = c.InvalidateChannel(ctx, id)
 // 				missing = append(missing, id)

@@ -11,24 +11,24 @@ import (
 )
 
 var (
-	userPendingsTTL = 24 * time.Hour
-	userFriendsTTL  = 24 * time.Hour
-	userBlocksTTL   = 24 * time.Hour
+	UserPendingsTTL = 24 * time.Hour
+	UserFriendsTTL  = 24 * time.Hour
+	UserBlocksTTL   = 24 * time.Hour
 )
 
-func userPendingsKey(id uuid.UUID) string {
+func UserPendingsKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":pendings"
 }
 
-func userFriendsKey(id uuid.UUID) string {
+func UserFriendsKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":friends"
 }
 
-func userIncomingBlocksKey(id uuid.UUID) string {
+func UserIncomingBlocksKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":incoming_blocks"
 }
 
-func userOutgoingBlocksKey(id uuid.UUID) string {
+func UserOutgoingBlocksKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":outgoing_blocks"
 }
 
@@ -41,43 +41,43 @@ func NewCache(client redisdriver.Cmdable) *Cache {
 }
 
 func (c *Cache) GetPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return c.getIDs(ctx, userID, userPendingsKey)
+	return c.getIDs(ctx, userID, UserPendingsKey)
 }
 
 func (c *Cache) SetPendingIDs(ctx context.Context, userID uuid.UUID, pendingIDs []uuid.UUID) error {
-	return c.setIDs(ctx, userID, pendingIDs, userPendingsKey, userPendingsTTL)
+	return c.setIDs(ctx, userID, pendingIDs, UserPendingsKey, UserPendingsTTL)
 }
 
 func (c *Cache) GetFriendIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return c.getIDs(ctx, userID, userFriendsKey)
+	return c.getIDs(ctx, userID, UserFriendsKey)
 }
 
 func (c *Cache) SetFriendIDs(ctx context.Context, userID uuid.UUID, friendIDs []uuid.UUID) error {
-	return c.setIDs(ctx, userID, friendIDs, userFriendsKey, userFriendsTTL)
+	return c.setIDs(ctx, userID, friendIDs, UserFriendsKey, UserFriendsTTL)
 }
 
 func (c *Cache) GetIncomingBlockIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return c.getIDs(ctx, userID, userIncomingBlocksKey)
+	return c.getIDs(ctx, userID, UserIncomingBlocksKey)
 }
 
 func (c *Cache) SetIncomingBlockIDs(ctx context.Context, userID uuid.UUID, blockIDs []uuid.UUID) error {
-	return c.setIDs(ctx, userID, blockIDs, userIncomingBlocksKey, userBlocksTTL)
+	return c.setIDs(ctx, userID, blockIDs, UserIncomingBlocksKey, UserBlocksTTL)
 }
 
 func (c *Cache) GetOutgoingBlockIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return c.getIDs(ctx, userID, userOutgoingBlocksKey)
+	return c.getIDs(ctx, userID, UserOutgoingBlocksKey)
 }
 
 func (c *Cache) SetOutgoingBlockIDs(ctx context.Context, userID uuid.UUID, blockIDs []uuid.UUID) error {
-	return c.setIDs(ctx, userID, blockIDs, userOutgoingBlocksKey, userBlocksTTL)
+	return c.setIDs(ctx, userID, blockIDs, UserOutgoingBlocksKey, UserBlocksTTL)
 }
 
 func (c *Cache) DeletePendingPair(ctx context.Context, actorID, peerID uuid.UUID) error {
-	return c.deleteKeys(ctx, userPendingsKey(actorID), userPendingsKey(peerID))
+	return c.deleteKeys(ctx, UserPendingsKey(actorID), UserPendingsKey(peerID))
 }
 
 func (c *Cache) DeleteFriendsPair(ctx context.Context, actorID, peerID uuid.UUID) error {
-	return c.deleteKeys(ctx, userFriendsKey(actorID), userFriendsKey(peerID))
+	return c.deleteKeys(ctx, UserFriendsKey(actorID), UserFriendsKey(peerID))
 }
 
 func (c *Cache) HandleNewFriends(
@@ -86,10 +86,10 @@ func (c *Cache) HandleNewFriends(
 	ch *channel.Channel,
 ) error {
 	keys := []string{
-		userPendingsKey(actorID),
-		userPendingsKey(peerID),
-		userFriendsKey(actorID),
-		userFriendsKey(peerID),
+		UserPendingsKey(actorID),
+		UserPendingsKey(peerID),
+		UserFriendsKey(actorID),
+		UserFriendsKey(peerID),
 		channel.UserChannelMembersKey(actorID),
 		channel.UserChannelMembersKey(peerID),
 	}
@@ -124,26 +124,26 @@ func (c *Cache) HandleNewFriends(
 }
 
 func (c *Cache) DeleteBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {
-	return c.deleteKeys(ctx, userOutgoingBlocksKey(actorID), userIncomingBlocksKey(peerID))
+	return c.deleteKeys(ctx, UserOutgoingBlocksKey(actorID), UserIncomingBlocksKey(peerID))
 }
 
 func (c *Cache) DeletePendingBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {
 	return c.deleteKeys(
 		ctx,
-		userPendingsKey(actorID),
-		userPendingsKey(peerID),
-		userOutgoingBlocksKey(actorID),
-		userIncomingBlocksKey(peerID),
+		UserPendingsKey(actorID),
+		UserPendingsKey(peerID),
+		UserOutgoingBlocksKey(actorID),
+		UserIncomingBlocksKey(peerID),
 	)
 }
 
 func (c *Cache) DeleteFriendBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {
 	return c.deleteKeys(
 		ctx,
-		userFriendsKey(actorID),
-		userFriendsKey(peerID),
-		userOutgoingBlocksKey(actorID),
-		userIncomingBlocksKey(peerID),
+		UserFriendsKey(actorID),
+		UserFriendsKey(peerID),
+		UserOutgoingBlocksKey(actorID),
+		UserIncomingBlocksKey(peerID),
 	)
 }
 

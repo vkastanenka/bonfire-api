@@ -93,7 +93,7 @@ func (r *CachedRepository) getCachedIDs(
 		return nil, err
 	}
 
-	peerIDs := extractPeerIDs(userID, rels)
+	peerIDs := ExtractPeerIDs(userID, rels)
 	if len(peerIDs) > 0 {
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
@@ -108,30 +108,4 @@ func (r *CachedRepository) getCachedIDs(
 	}
 
 	return peerIDs, nil
-}
-
-func extractPeerIDs(actorID uuid.UUID, rels []*Relation) []uuid.UUID {
-	if len(rels) == 0 {
-		return nil
-	}
-
-	peerIDs := make([]uuid.UUID, 0, len(rels))
-	for _, rel := range rels {
-		if rel == nil {
-			continue
-		}
-
-		switch actorID {
-		case rel.User1ID:
-			peerIDs = append(peerIDs, rel.User2ID)
-		case rel.User2ID:
-			peerIDs = append(peerIDs, rel.User1ID)
-		}
-	}
-
-	if len(peerIDs) == 0 {
-		return nil
-	}
-
-	return peerIDs
 }

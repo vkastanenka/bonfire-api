@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"slices"
-	"sync"
 	"time"
 
 	"bonfire-api/internal/channel"
@@ -46,32 +45,17 @@ type Params struct {
 }
 
 type Result struct {
-	User             *user.User
-	PendingIDs       []uuid.UUID
-	FriendIDs        []uuid.UUID
-	UserMembers      map[uuid.UUID]*channel.Member
-	Channels         map[uuid.UUID]*channel.Channel
-	ChannelMemberIDs map[uuid.UUID][]uuid.UUID
-	SidebarIDs       []uuid.UUID
-	Peers            map[uuid.UUID]*user.User
-	PeerPresences    map[uuid.UUID]gateway.Presence
-}
-
-type step1Data struct {
-	pendingIDs       []uuid.UUID
-	friendIDs        []uuid.UUID
-	outgoingBlockIDs []uuid.UUID
-	userMembers      map[uuid.UUID]*channel.Member
-}
-
-type step2Data struct {
-	channels         map[uuid.UUID]*channel.Channel
-	channelMemberIDs map[uuid.UUID][]uuid.UUID
-}
-
-type step3Data struct {
-	users     map[uuid.UUID]*user.User
-	presences map[uuid.UUID]gateway.Presence
+	User               *user.User
+	OutgoingPendingIDs []uuid.UUID
+	IncomingPendingIDs []uuid.UUID
+	FriendIDs          []uuid.UUID
+	OutgoingBlockIDs   []uuid.UUID
+	UserMembers        map[uuid.UUID]*channel.Member
+	Channels           map[uuid.UUID]*channel.Channel
+	ChannelMemberIDs   map[uuid.UUID][]uuid.UUID
+	SidebarIDs         []uuid.UUID
+	Peers              map[uuid.UUID]*user.User
+	PeerPresences      map[uuid.UUID]gateway.Presence
 }
 
 func (s *Service) Bootstrap(ctx context.Context, p Params) (*Result, error) {
@@ -90,7 +74,8 @@ func (s *Service) Bootstrap(ctx context.Context, p Params) (*Result, error) {
 	s3, err := s.hydrateUsersAndPresences(
 		ctx,
 		p.UserID,
-		s1.pendingIDs,
+		s1.outgoingPendingIDs,
+		s1.incomingPendingIDs,
 		s1.friendIDs,
 		s1.outgoingBlockIDs,
 		s2.channelMemberIDs,
@@ -106,14 +91,24 @@ func (s *Service) Bootstrap(ctx context.Context, p Params) (*Result, error) {
 
 	return s.buildResult(
 		p.UserID,
-		s1.pendingIDs,
+		s1.outgoingPendingIDs,
+		s1.incomingPendingIDs,
 		s1.friendIDs,
+		s1.outgoingBlockIDs,
 		s1.userMembers,
 		s2.channels,
 		s2.channelMemberIDs,
 		s3.users,
 		s3.presences,
 	), nil
+}
+
+type step1Data struct {
+	outgoingPendingIDs []uuid.UUID
+	incomingPendingIDs []uuid.UUID
+	friendIDs          []uuid.UUID
+	outgoingBlockIDs   []uuid.UUID
+	userMembers        map[uuid.UUID]*channel.Member
 }
 
 func (s *Service) hydrateUserData(
@@ -126,7 +121,8 @@ func (s *Service) hydrateUserData(
 		return nil, err
 	}
 
-	pendingIDs := userData.PendingIDs
+	outgoingPendingIDs := userData.OutgoingPendingIDs
+	incomingPendingIDs := userData.IncomingPendingIDs
 	friendIDs := userData.FriendIDs
 	outgoingBlockIDs := userData.OutgoingBlockIDs
 	userMembers := userData.ChannelMembers
@@ -134,54 +130,36 @@ func (s *Service) hydrateUserData(
 		userMembers = make(map[uuid.UUID]*channel.Member)
 	}
 
-	hasMiss := userData.PendingMiss ||
-		userData.FriendMiss ||
-		userData.OutgoingBlockMiss ||
-		userData.ChannelMemberMiss
+	needPendingOrFriend := userData.OutgoingPendingMiss || userData.IncomingPendingMiss || userData.FriendMiss
+	hasMiss := needPendingOrFriend || userData.OutgoingBlockMiss || userData.ChannelMemberMiss
 
 	if !hasMiss {
 		return &step1Data{
-			pendingIDs:       pendingIDs,
-			friendIDs:        friendIDs,
-			outgoingBlockIDs: outgoingBlockIDs,
-			userMembers:      userMembers,
+			outgoingPendingIDs: outgoingPendingIDs,
+			incomingPendingIDs: incomingPendingIDs,
+			friendIDs:          friendIDs,
+			outgoingBlockIDs:   outgoingBlockIDs,
+			userMembers:        userMembers,
 		}, nil
 	}
 
 	var (
-		mu           sync.Mutex
-		dbPendings   []uuid.UUID
-		dbFriends    []uuid.UUID
-		dbBlocks     []uuid.UUID
-		dbUserMember map[uuid.UUID]*channel.Member
+		dbOutgoing []uuid.UUID
+		dbIncoming []uuid.UUID
+		dbFriends  []uuid.UUID
+		dbBlocks   []uuid.UUID
+		dbUserMems map[uuid.UUID]*channel.Member
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
 
-	if userData.PendingMiss {
+	if needPendingOrFriend {
 		g.Go(func() error {
-			rels, qErr := s.relationRepo.ListPendingsByUserID(gCtx, userID, relation.MaxTypeLimit)
+			rels, qErr := s.relationRepo.ListPendingsAndFriendsByUserID(gCtx, userID, relation.MaxTypeLimit*2)
 			if qErr != nil {
 				return qErr
 			}
-			ids := relation.ExtractPeerIDs(userID, rels)
-			mu.Lock()
-			dbPendings = ids
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if userData.FriendMiss {
-		g.Go(func() error {
-			rels, qErr := s.relationRepo.ListFriendsByUserID(gCtx, userID, relation.MaxTypeLimit)
-			if qErr != nil {
-				return qErr
-			}
-			ids := relation.ExtractPeerIDs(userID, rels)
-			mu.Lock()
-			dbFriends = ids
-			mu.Unlock()
+			dbOutgoing, dbIncoming, dbFriends = partitionPendingAndFriendRelations(userID, rels)
 			return nil
 		})
 	}
@@ -192,10 +170,7 @@ func (s *Service) hydrateUserData(
 			if qErr != nil {
 				return qErr
 			}
-			ids := relation.ExtractPeerIDs(userID, rels)
-			mu.Lock()
-			dbBlocks = ids
-			mu.Unlock()
+			dbBlocks = relation.ExtractPeerIDs(userID, rels)
 			return nil
 		})
 	}
@@ -213,9 +188,7 @@ func (s *Service) hydrateUserData(
 				}
 				mapped[m.ChannelID] = m
 			}
-			mu.Lock()
-			dbUserMember = mapped
-			mu.Unlock()
+			dbUserMems = mapped
 			return nil
 		})
 	}
@@ -224,10 +197,15 @@ func (s *Service) hydrateUserData(
 		return nil, err
 	}
 
-	if userData.PendingMiss {
-		pendingIDs = dbPendings
-		backfill.SetPendings = true
-		backfill.PendingIDs = pendingIDs
+	if userData.OutgoingPendingMiss {
+		outgoingPendingIDs = dbOutgoing
+		backfill.SetOutgoingPendings = true
+		backfill.OutgoingPendingIDs = outgoingPendingIDs
+	}
+	if userData.IncomingPendingMiss {
+		incomingPendingIDs = dbIncoming
+		backfill.SetIncomingPendings = true
+		backfill.IncomingPendingIDs = incomingPendingIDs
 	}
 	if userData.FriendMiss {
 		friendIDs = dbFriends
@@ -240,17 +218,57 @@ func (s *Service) hydrateUserData(
 		backfill.OutgoingBlockIDs = outgoingBlockIDs
 	}
 	if userData.ChannelMemberMiss {
-		userMembers = dbUserMember
+		userMembers = dbUserMems
 		backfill.SetUserMembers = true
 		backfill.UserMembers = userMembers
 	}
 
 	return &step1Data{
-		pendingIDs:       pendingIDs,
-		friendIDs:        friendIDs,
-		outgoingBlockIDs: outgoingBlockIDs,
-		userMembers:      userMembers,
+		outgoingPendingIDs: outgoingPendingIDs,
+		incomingPendingIDs: incomingPendingIDs,
+		friendIDs:          friendIDs,
+		outgoingBlockIDs:   outgoingBlockIDs,
+		userMembers:        userMembers,
 	}, nil
+}
+
+func partitionPendingAndFriendRelations(
+	userID uuid.UUID,
+	rels []*relation.Relation,
+) (outgoingPending []uuid.UUID, incomingPending []uuid.UUID, friends []uuid.UUID) {
+	for _, rel := range rels {
+		if rel == nil {
+			continue
+		}
+
+		var peerID uuid.UUID
+		switch userID {
+		case rel.User1ID:
+			peerID = rel.User2ID
+		case rel.User2ID:
+			peerID = rel.User1ID
+		default:
+			continue
+		}
+
+		switch rel.Type {
+		case relation.TypePending:
+			if rel.ActorID == userID {
+				outgoingPending = append(outgoingPending, peerID)
+			} else {
+				incomingPending = append(incomingPending, peerID)
+			}
+		case relation.TypeFriends:
+			friends = append(friends, peerID)
+		}
+	}
+
+	return outgoingPending, incomingPending, friends
+}
+
+type step2Data struct {
+	channels         map[uuid.UUID]*channel.Channel
+	channelMemberIDs map[uuid.UUID][]uuid.UUID
 }
 
 func (s *Service) hydrateChannelsAndMembers(
@@ -285,9 +303,10 @@ func (s *Service) hydrateChannelsAndMembers(
 	}
 
 	var (
-		mu           sync.Mutex
-		backfillChs  = make(map[uuid.UUID]*channel.Channel, len(chAndMemData.MissingChIDs))
-		backfillMems = make(map[uuid.UUID][]uuid.UUID, len(chAndMemData.MissingMemChIDs))
+		fetchedChannels  []*channel.Channel
+		fetchedMemberIDs map[uuid.UUID][]uuid.UUID
+		backfillChs      = make(map[uuid.UUID]*channel.Channel, len(chAndMemData.MissingChIDs))
+		backfillMems     = make(map[uuid.UUID][]uuid.UUID, len(chAndMemData.MissingMemChIDs))
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
@@ -299,15 +318,13 @@ func (s *Service) hydrateChannelsAndMembers(
 			if qErr != nil {
 				return qErr
 			}
-			mu.Lock()
+			fetchedChannels = fetched
 			for _, ch := range fetched {
 				if ch == nil {
 					continue
 				}
-				channels[ch.ID] = ch
 				backfillChs[ch.ID] = ch
 			}
-			mu.Unlock()
 			return nil
 		})
 	}
@@ -319,7 +336,7 @@ func (s *Service) hydrateChannelsAndMembers(
 			if qErr != nil {
 				return qErr
 			}
-			mu.Lock()
+			mems := make(map[uuid.UUID][]uuid.UUID, len(fetchedMap))
 			for chID, members := range fetchedMap {
 				ids := make([]uuid.UUID, 0, len(members))
 				for _, m := range members {
@@ -328,16 +345,26 @@ func (s *Service) hydrateChannelsAndMembers(
 					}
 					ids = append(ids, m.UserID)
 				}
-				channelMemberIDs[chID] = ids
+				mems[chID] = ids
 				backfillMems[chID] = ids
 			}
-			mu.Unlock()
+			fetchedMemberIDs = mems
 			return nil
 		})
 	}
 
 	if err := g.Wait(); err != nil {
 		return nil, err
+	}
+
+	for _, ch := range fetchedChannels {
+		if ch == nil {
+			continue
+		}
+		channels[ch.ID] = ch
+	}
+	for chID, ids := range fetchedMemberIDs {
+		channelMemberIDs[chID] = ids
 	}
 
 	if len(backfillChs) > 0 {
@@ -353,16 +380,29 @@ func (s *Service) hydrateChannelsAndMembers(
 	}, nil
 }
 
+type step3Data struct {
+	users     map[uuid.UUID]*user.User
+	presences map[uuid.UUID]gateway.Presence
+}
+
 func (s *Service) hydrateUsersAndPresences(
 	ctx context.Context,
 	userID uuid.UUID,
-	pendingIDs []uuid.UUID,
+	outgoingPendingIDs []uuid.UUID,
+	incomingPendingIDs []uuid.UUID,
 	friendIDs []uuid.UUID,
 	outgoingBlockIDs []uuid.UUID,
 	channelMemberIDs map[uuid.UUID][]uuid.UUID,
 	backfill *BackfillParams,
 ) (*step3Data, error) {
-	allUserIDs := collectUniqueUserIDs(userID, pendingIDs, friendIDs, outgoingBlockIDs, channelMemberIDs)
+	allUserIDs := collectUniqueUserIDs(
+		userID,
+		outgoingPendingIDs,
+		incomingPendingIDs,
+		friendIDs,
+		outgoingBlockIDs,
+		channelMemberIDs,
+	)
 
 	usersAndPresences, err := s.cache.GetUsersAndPresences(ctx, allUserIDs)
 	if err != nil {
@@ -402,14 +442,26 @@ func (s *Service) hydrateUsersAndPresences(
 
 func (s *Service) buildResult(
 	userID uuid.UUID,
-	pendingIDs []uuid.UUID,
+	outgoingPendingIDs []uuid.UUID,
+	incomingPendingIDs []uuid.UUID,
 	friendIDs []uuid.UUID,
+	outgoingBlockIDs []uuid.UUID,
 	userMembers map[uuid.UUID]*channel.Member,
 	channels map[uuid.UUID]*channel.Channel,
 	channelMemberIDs map[uuid.UUID][]uuid.UUID,
 	users map[uuid.UUID]*user.User,
 	presences map[uuid.UUID]gateway.Presence,
 ) *Result {
+	outPending := nonNilUUIDs(outgoingPendingIDs)
+	inPending := nonNilUUIDs(incomingPendingIDs)
+	friends := nonNilUUIDs(friendIDs)
+	outBlocks := nonNilUUIDs(outgoingBlockIDs)
+
+	relation.SortIDs(outPending, users)
+	relation.SortIDs(inPending, users)
+	relation.SortIDs(friends, users)
+	relation.SortIDs(outBlocks, users)
+
 	sortedChannels := make([]*channel.Channel, 0, len(channels))
 	for _, ch := range channels {
 		if ch != nil {
@@ -428,15 +480,15 @@ func (s *Service) buildResult(
 		sidebarIDs = append(sidebarIDs, ch.ID)
 	}
 
-	peers := make(map[uuid.UUID]*user.User, len(users))
+	peers := make(map[uuid.UUID]*user.User)
 	for uid, u := range users {
-		if uid == userID {
+		if uid == userID || u == nil {
 			continue
 		}
 		peers[uid] = u
 	}
 
-	peerPresences := make(map[uuid.UUID]gateway.Presence, len(presences))
+	peerPresences := make(map[uuid.UUID]gateway.Presence)
 	for uid, pres := range presences {
 		if uid == userID {
 			continue
@@ -444,17 +496,36 @@ func (s *Service) buildResult(
 		peerPresences[uid] = pres
 	}
 
-	return &Result{
-		User:             users[userID],
-		PendingIDs:       pendingIDs,
-		FriendIDs:        friendIDs,
-		UserMembers:      userMembers,
-		Channels:         channels,
-		ChannelMemberIDs: channelMemberIDs,
-		SidebarIDs:       sidebarIDs,
-		Peers:            peers,
-		PeerPresences:    peerPresences,
+	if userMembers == nil {
+		userMembers = make(map[uuid.UUID]*channel.Member)
 	}
+	if channels == nil {
+		channels = make(map[uuid.UUID]*channel.Channel)
+	}
+	if channelMemberIDs == nil {
+		channelMemberIDs = make(map[uuid.UUID][]uuid.UUID)
+	}
+
+	return &Result{
+		User:               users[userID],
+		OutgoingPendingIDs: outPending,
+		IncomingPendingIDs: inPending,
+		FriendIDs:          friends,
+		OutgoingBlockIDs:   outBlocks,
+		UserMembers:        userMembers,
+		Channels:           channels,
+		ChannelMemberIDs:   channelMemberIDs,
+		SidebarIDs:         sidebarIDs,
+		Peers:              peers,
+		PeerPresences:      peerPresences,
+	}
+}
+
+func nonNilUUIDs(ids []uuid.UUID) []uuid.UUID {
+	if ids == nil {
+		return []uuid.UUID{}
+	}
+	return ids
 }
 
 func (s *Service) backfillCache(ctx context.Context, params BackfillParams) {
@@ -471,12 +542,13 @@ func (s *Service) backfillCache(ctx context.Context, params BackfillParams) {
 
 func collectUniqueUserIDs(
 	userID uuid.UUID,
-	pendingIDs []uuid.UUID,
+	outgoingPendingIDs []uuid.UUID,
+	incomingPendingIDs []uuid.UUID,
 	friendIDs []uuid.UUID,
 	outgoingBlockIDs []uuid.UUID,
 	channelMemberIDs map[uuid.UUID][]uuid.UUID,
 ) []uuid.UUID {
-	capacity := 1 + len(pendingIDs) + len(friendIDs) + len(outgoingBlockIDs) + len(channelMemberIDs)*4
+	capacity := 1 + len(outgoingPendingIDs) + len(incomingPendingIDs) + len(friendIDs) + len(outgoingBlockIDs) + len(channelMemberIDs)*4
 	seen := make(map[uuid.UUID]struct{}, capacity)
 	add := func(id uuid.UUID) {
 		if id == uuid.Nil {
@@ -486,7 +558,10 @@ func collectUniqueUserIDs(
 	}
 
 	add(userID)
-	for _, id := range pendingIDs {
+	for _, id := range outgoingPendingIDs {
+		add(id)
+	}
+	for _, id := range incomingPendingIDs {
 		add(id)
 	}
 	for _, id := range friendIDs {
@@ -506,16 +581,6 @@ func collectUniqueUserIDs(
 		ids = append(ids, uid)
 	}
 	return ids
-}
-
-func (p BackfillParams) hasWrites() bool {
-	return p.SetPendings ||
-		p.SetFriends ||
-		p.SetOutgoingBlocks ||
-		p.SetUserMembers ||
-		len(p.Channels) > 0 ||
-		len(p.ChannelMemberIDs) > 0 ||
-		len(p.Users) > 0
 }
 
 func sortSidebar(channels []*channel.Channel, userMembersMap map[uuid.UUID]*channel.Member) {

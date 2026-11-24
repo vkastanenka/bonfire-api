@@ -222,30 +222,22 @@ func NewMemberDTO(m *Member) *MemberDTO {
 	}
 }
 
-func NewMemberDTOs(members []*Member) []MemberDTO {
-	if len(members) == 0 {
-		return nil
-	}
-
-	dtos := make([]MemberDTO, 0, len(members))
+func NewMemberDTOs(members []*Member) []*MemberDTO {
+	dtos := make([]*MemberDTO, 0, len(members))
 	for _, m := range members {
 		if dto := NewMemberDTO(m); dto != nil {
-			dtos = append(dtos, *dto)
+			dtos = append(dtos, dto)
 		}
 	}
 
 	return dtos
 }
 
-func NewMemberDTOMap(members []*Member) map[uuid.UUID]MemberDTO {
-	if len(members) == 0 {
-		return make(map[uuid.UUID]MemberDTO)
-	}
-
-	dtos := make(map[uuid.UUID]MemberDTO, len(members))
-	for _, m := range members {
+func NewMemberDTOsMap(members map[uuid.UUID]*Member) map[uuid.UUID]*MemberDTO {
+	dtos := make(map[uuid.UUID]*MemberDTO, len(members))
+	for id, m := range members {
 		if dto := NewMemberDTO(m); dto != nil {
-			dtos[m.UserID] = *dto
+			dtos[id] = dto
 		}
 	}
 

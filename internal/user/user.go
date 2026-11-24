@@ -244,15 +244,11 @@ func NewDTOs(users []*User) []DTO {
 	return dtos
 }
 
-func NewDTOMap(users map[uuid.UUID]*User) map[uuid.UUID]DTO {
-	if len(users) == 0 {
-		return make(map[uuid.UUID]DTO)
-	}
-
-	dtos := make(map[uuid.UUID]DTO, len(users))
+func NewDTOsMap(users map[uuid.UUID]*User) map[uuid.UUID]*DTO {
+	dtos := make(map[uuid.UUID]*DTO, len(users))
 	for id, u := range users {
 		if dto := NewDTO(u); dto != nil {
-			dtos[id] = *dto
+			dtos[id] = dto
 		}
 	}
 

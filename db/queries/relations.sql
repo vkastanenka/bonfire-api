@@ -79,6 +79,18 @@ ORDER BY
     created_at DESC
 LIMIT @limit_val::int;
 
+-- name: RelationListPendingsAndFriendsByUserID :many
+SELECT
+    relations.*
+FROM
+    relations
+WHERE (user1_id = @user_id::uuid
+    OR user2_id = @user_id::uuid)
+AND type IN (1, 2)
+ORDER BY
+    created_at DESC
+LIMIT @limit_val::int;
+
 -- name: RelationCountTypeByUserID :one
 SELECT
     COUNT(*)

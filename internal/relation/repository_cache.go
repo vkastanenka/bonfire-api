@@ -20,17 +20,6 @@ func NewCachedRepository(cache *Cache, repo *Repository) *CachedRepository {
 	}
 }
 
-func (r *CachedRepository) GetPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	return r.getCachedIDs(
-		ctx,
-		userID,
-		"pendings",
-		r.cache.GetPendingIDs,
-		r.repo.ListPendingsByUserID,
-		r.cache.SetPendingIDs,
-	)
-}
-
 func (r *CachedRepository) GetFriendIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	return r.getCachedIDs(
 		ctx,
@@ -39,6 +28,28 @@ func (r *CachedRepository) GetFriendIDs(ctx context.Context, userID uuid.UUID) (
 		r.cache.GetFriendIDs,
 		r.repo.ListFriendsByUserID,
 		r.cache.SetFriendIDs,
+	)
+}
+
+func (r *CachedRepository) GetIncomingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	return r.getCachedIDs(
+		ctx,
+		userID,
+		"incoming_pendings",
+		r.cache.GetIncomingPendingIDs,
+		r.repo.ListIncomingPendingsByUserID,
+		r.cache.SetIncomingPendingIDs,
+	)
+}
+
+func (r *CachedRepository) GetOutgoingPendingIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	return r.getCachedIDs(
+		ctx,
+		userID,
+		"outgoing_pendings",
+		r.cache.GetOutgoingPendingIDs,
+		r.repo.ListOutgoingPendingsByUserID,
+		r.cache.SetOutgoingPendingIDs,
 	)
 }
 
@@ -93,7 +104,7 @@ func (r *CachedRepository) getCachedIDs(
 		return nil, err
 	}
 
-	peerIDs := ExtractPeerIDs(userID, rels)
+	peerIDs := extractPeerIDs(userID, rels)
 	if len(peerIDs) > 0 {
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
@@ -108,4 +119,30 @@ func (r *CachedRepository) getCachedIDs(
 	}
 
 	return peerIDs, nil
+}
+
+func extractPeerIDs(actorID uuid.UUID, rels []*Relation) []uuid.UUID {
+	if len(rels) == 0 {
+		return nil
+	}
+
+	peerIDs := make([]uuid.UUID, 0, len(rels))
+	for _, rel := range rels {
+		if rel == nil {
+			continue
+		}
+
+		switch actorID {
+		case rel.User1ID:
+			peerIDs = append(peerIDs, rel.User2ID)
+		case rel.User2ID:
+			peerIDs = append(peerIDs, rel.User1ID)
+		}
+	}
+
+	if len(peerIDs) == 0 {
+		return nil
+	}
+
+	return peerIDs
 }

@@ -306,6 +306,52 @@ func (q *Queries) RelationListOutgoingTypeByUserID(ctx context.Context, arg Rela
 	return items, nil
 }
 
+const relationListPendingsAndFriendsByUserID = `-- name: RelationListPendingsAndFriendsByUserID :many
+SELECT
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+FROM
+    relations
+WHERE (user1_id = $1::uuid
+    OR user2_id = $1::uuid)
+AND type IN (1, 2)
+ORDER BY
+    created_at DESC
+LIMIT $2::int
+`
+
+type RelationListPendingsAndFriendsByUserIDParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	LimitVal int32       `json:"limit_val"`
+}
+
+func (q *Queries) RelationListPendingsAndFriendsByUserID(ctx context.Context, arg RelationListPendingsAndFriendsByUserIDParams) ([]Relation, error) {
+	rows, err := q.db.Query(ctx, relationListPendingsAndFriendsByUserID, arg.UserID, arg.LimitVal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Relation
+	for rows.Next() {
+		var i Relation
+		if err := rows.Scan(
+			&i.User1ID,
+			&i.User2ID,
+			&i.ActorID,
+			&i.ChannelID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Type,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const relationListTypeByUserID = `-- name: RelationListTypeByUserID :many
 SELECT
     relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type

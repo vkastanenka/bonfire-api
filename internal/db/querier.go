@@ -18,7 +18,6 @@ type Querier interface {
 	ChannelDelete(ctx context.Context, id pgtype.UUID) error
 	ChannelGet(ctx context.Context, id pgtype.UUID) (Channel, error)
 	ChannelGetBatch(ctx context.Context, ids []pgtype.UUID) ([]Channel, error)
-	ChannelGetBatchByOwnerID(ctx context.Context, ownerIds []pgtype.UUID) ([]Channel, error)
 	ChannelGetForUpdate(ctx context.Context, id pgtype.UUID) (Channel, error)
 	ChannelMemberCountBatchByUserID(ctx context.Context, userIds []pgtype.UUID) ([]ChannelMemberCountBatchByUserIDRow, error)
 	ChannelMemberCountByChannelID(ctx context.Context, channelID pgtype.UUID) (int64, error)
@@ -72,6 +71,7 @@ type Querier interface {
 	RelationHasIncomingBlock(ctx context.Context, arg RelationHasIncomingBlockParams) (bool, error)
 	RelationListIncomingTypeByUserID(ctx context.Context, arg RelationListIncomingTypeByUserIDParams) ([]Relation, error)
 	RelationListOutgoingTypeByUserID(ctx context.Context, arg RelationListOutgoingTypeByUserIDParams) ([]Relation, error)
+	RelationListPendingsAndFriendsByUserID(ctx context.Context, arg RelationListPendingsAndFriendsByUserIDParams) ([]Relation, error)
 	RelationListTypeByUserID(ctx context.Context, arg RelationListTypeByUserIDParams) ([]Relation, error)
 	RelationSave(ctx context.Context, arg RelationSaveParams) (Relation, error)
 	SessionCreate(ctx context.Context, arg SessionCreateParams) (Session, error)

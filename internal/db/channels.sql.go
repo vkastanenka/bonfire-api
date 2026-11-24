@@ -132,46 +132,6 @@ func (q *Queries) ChannelGetBatch(ctx context.Context, ids []pgtype.UUID) ([]Cha
 	return items, nil
 }
 
-const channelGetBatchByOwnerID = `-- name: ChannelGetBatchByOwnerID :many
-SELECT
-    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
-FROM
-    channels
-WHERE
-    owner_id = ANY ($1::uuid[])
-    AND type = 2
-`
-
-func (q *Queries) ChannelGetBatchByOwnerID(ctx context.Context, ownerIds []pgtype.UUID) ([]Channel, error) {
-	rows, err := q.db.Query(ctx, channelGetBatchByOwnerID, ownerIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Channel
-	for rows.Next() {
-		var i Channel
-		if err := rows.Scan(
-			&i.ID,
-			&i.LastMessageID,
-			&i.OwnerID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.LastMessageAt,
-			&i.Type,
-			&i.Name,
-			&i.IconURL,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const channelGetForUpdate = `-- name: ChannelGetForUpdate :one
 SELECT
     channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url

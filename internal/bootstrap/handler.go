@@ -4,10 +4,13 @@ import (
 	"net/http"
 
 	"bonfire-api/internal/appctx"
+	"bonfire-api/internal/channel"
+	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/httpio"
 	"bonfire-api/internal/user"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -27,7 +30,17 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 }
 
 type bootstrapResponse struct {
-	Me *user.MeDTO `json:"me"`
+	Me                 *user.MeDTO                       `json:"me"`
+	OutgoingPendingIDs []uuid.UUID                       `json:"outgoingPendingIds"`
+	IncomingPendingIDs []uuid.UUID                       `json:"incomingPendingIds"`
+	FriendIDs          []uuid.UUID                       `json:"friendIds"`
+	OutgoingBlockIDs   []uuid.UUID                       `json:"outgoingBlockIds"`
+	UserMembers        map[uuid.UUID]*channel.MemberDTO  `json:"userChannelMembers"`
+	Channels           map[uuid.UUID]*channel.ChannelDTO `json:"channels"`
+	ChannelMemberIDs   map[uuid.UUID][]uuid.UUID         `json:"channelMemberIds"`
+	SidebarIDs         []uuid.UUID                       `json:"sidebarIds"`
+	Peers              map[uuid.UUID]*user.DTO           `json:"peers"`
+	PeerPresences      map[uuid.UUID]gateway.Presence    `json:"peerPresences"`
 }
 
 func (h *Handler) bootstrap(w http.ResponseWriter, r *http.Request) error {
@@ -44,7 +57,17 @@ func (h *Handler) bootstrap(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	httpio.RespondOK(w, r, bootstrapResponse{
-		Me: user.NewMeDTO(result.User),
+		Me:                 user.NewMeDTO(result.User),
+		OutgoingPendingIDs: result.OutgoingPendingIDs,
+		IncomingPendingIDs: result.IncomingPendingIDs,
+		FriendIDs:          result.FriendIDs,
+		OutgoingBlockIDs:   result.OutgoingBlockIDs,
+		UserMembers:        channel.NewMemberDTOsMap(result.UserMembers),
+		Channels:           channel.NewDTOsMap(result.Channels),
+		ChannelMemberIDs:   result.ChannelMemberIDs,
+		SidebarIDs:         result.SidebarIDs,
+		Peers:              user.NewDTOsMap(result.Peers),
+		PeerPresences:      result.PeerPresences,
 	})
 	return nil
 }

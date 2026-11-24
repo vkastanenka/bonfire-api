@@ -15,6 +15,7 @@ type Resource string
 
 const (
 	ResourceAuth        Resource = "auth"
+	ResourceBootstrap   Resource = "bootstrap"
 	ResourceChannel     Resource = "channel"
 	ResourceGateway     Resource = "gateway"
 	ResourceMember      Resource = "member"

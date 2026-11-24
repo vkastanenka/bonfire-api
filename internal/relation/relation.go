@@ -190,8 +190,8 @@ func ExtractPeerIDs(actorID uuid.UUID, rels []*Relation) []uuid.UUID {
 	return peerIDs
 }
 
-func sortFriendIDs(friendIDs []uuid.UUID, users map[uuid.UUID]*user.User) {
-	slices.SortFunc(friendIDs, func(aID, bID uuid.UUID) int {
+func SortIDs(ids []uuid.UUID, users map[uuid.UUID]*user.User) {
+	slices.SortFunc(ids, func(aID, bID uuid.UUID) int {
 		uA := users[aID]
 		uB := users[bID]
 

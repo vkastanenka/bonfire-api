@@ -24,50 +24,46 @@ func NewCache(client redisdriver.Cmdable) *Cache {
 }
 
 type UserDataResult struct {
-	PendingIDs        []uuid.UUID
-	PendingMiss       bool
-	FriendIDs         []uuid.UUID
-	FriendMiss        bool
-	OutgoingBlockIDs  []uuid.UUID
-	OutgoingBlockMiss bool
-	ChannelMembers    map[uuid.UUID]*channel.Member
-	ChannelMemberMiss bool
+	OutgoingPendingIDs  []uuid.UUID
+	OutgoingPendingMiss bool
+	IncomingPendingIDs  []uuid.UUID
+	IncomingPendingMiss bool
+	FriendIDs           []uuid.UUID
+	FriendMiss          bool
+	OutgoingBlockIDs    []uuid.UUID
+	OutgoingBlockMiss   bool
+	ChannelMembers      map[uuid.UUID]*channel.Member
+	ChannelMemberMiss   bool
 }
 
-type ChannelsAndMembersResult struct {
-	Channels        map[uuid.UUID]*channel.Channel
-	MissingChIDs    []uuid.UUID
-	ChannelMembers  map[uuid.UUID][]uuid.UUID
-	MissingMemChIDs []uuid.UUID
-}
-
-type UsersAndPresencesResult struct {
-	Users          map[uuid.UUID]*user.User
-	MissingUserIDs []uuid.UUID
-	Presences      map[uuid.UUID]gateway.Presence
-}
-
-// Step 1: Fetch pendings, friends, outgoing blocks, and user channel memberships in one pipeline.
 func (c *Cache) GetUserData(ctx context.Context, userID uuid.UUID) (*UserDataResult, error) {
 	pipe := c.client.Pipeline()
 
-	pendingsCmd := pipe.SMembers(ctx, relation.UserPendingsKey(userID))
+	outgoingPendingsCmd := pipe.SMembers(ctx, relation.UserOutgoingPendingsKey(userID))
+	incomingPendingsCmd := pipe.SMembers(ctx, relation.UserIncomingPendingsKey(userID))
 	friendsCmd := pipe.SMembers(ctx, relation.UserFriendsKey(userID))
 	outgoingBlocksCmd := pipe.SMembers(ctx, relation.UserOutgoingBlocksKey(userID))
 	channelMembersCmd := pipe.HGetAll(ctx, channel.UserChannelMembersKey(userID))
 
 	_, err := pipe.Exec(ctx)
 	if err != nil && !redis.IsCacheMiss(err) {
-		return nil, redis.NewError(err, redis.ResourceRelation)
+		return nil, redis.NewError(err, redis.ResourceBootstrap)
 	}
 
 	out := &UserDataResult{}
 
-	pendingIDs, ok := parseUUIDStrings(pendingsCmd.Val())
+	outgoingIDs, ok := parseUUIDStrings(outgoingPendingsCmd.Val())
 	if !ok {
-		out.PendingMiss = true
+		out.OutgoingPendingMiss = true
 	} else {
-		out.PendingIDs = pendingIDs
+		out.OutgoingPendingIDs = outgoingIDs
+	}
+
+	incomingIDs, ok := parseUUIDStrings(incomingPendingsCmd.Val())
+	if !ok {
+		out.IncomingPendingMiss = true
+	} else {
+		out.IncomingPendingIDs = incomingIDs
 	}
 
 	friendIDs, ok := parseUUIDStrings(friendsCmd.Val())
@@ -107,10 +103,17 @@ func (c *Cache) GetUserData(ctx context.Context, userID uuid.UUID) (*UserDataRes
 			out.ChannelMembers = parsedMembers
 		}
 	}
+
 	return out, nil
 }
 
-// Step 2: Fetch channel entities and channel member ID sets in batch in one pipeline.
+type ChannelsAndMembersResult struct {
+	Channels        map[uuid.UUID]*channel.Channel
+	MissingChIDs    []uuid.UUID
+	ChannelMembers  map[uuid.UUID][]uuid.UUID
+	MissingMemChIDs []uuid.UUID
+}
+
 func (c *Cache) GetChannelsAndMembers(
 	ctx context.Context,
 	channelIDs []uuid.UUID,
@@ -162,7 +165,12 @@ func (c *Cache) GetChannelsAndMembers(
 	return out, nil
 }
 
-// Step 3: Fetch deduplicated user profiles and user presences in batch in one pipeline.
+type UsersAndPresencesResult struct {
+	Users          map[uuid.UUID]*user.User
+	MissingUserIDs []uuid.UUID
+	Presences      map[uuid.UUID]gateway.Presence
+}
+
 func (c *Cache) GetUsersAndPresences(
 	ctx context.Context,
 	userIDs []uuid.UUID,
@@ -248,12 +256,14 @@ const backfillTimeout = 2 * time.Second
 type BackfillParams struct {
 	UserID uuid.UUID
 
-	SetPendings       bool
-	PendingIDs        []uuid.UUID
-	SetFriends        bool
-	FriendIDs         []uuid.UUID
-	SetOutgoingBlocks bool
-	OutgoingBlockIDs  []uuid.UUID
+	SetOutgoingPendings bool
+	OutgoingPendingIDs  []uuid.UUID
+	SetIncomingPendings bool
+	IncomingPendingIDs  []uuid.UUID
+	SetFriends          bool
+	FriendIDs           []uuid.UUID
+	SetOutgoingBlocks   bool
+	OutgoingBlockIDs    []uuid.UUID
 
 	SetUserMembers bool
 	UserMembers    map[uuid.UUID]*channel.Member
@@ -261,6 +271,17 @@ type BackfillParams struct {
 	Channels         map[uuid.UUID]*channel.Channel
 	ChannelMemberIDs map[uuid.UUID][]uuid.UUID
 	Users            map[uuid.UUID]*user.User
+}
+
+func (p BackfillParams) hasWrites() bool {
+	return p.SetOutgoingPendings ||
+		p.SetIncomingPendings ||
+		p.SetFriends ||
+		p.SetOutgoingBlocks ||
+		p.SetUserMembers ||
+		len(p.Channels) > 0 ||
+		len(p.ChannelMemberIDs) > 0 ||
+		len(p.Users) > 0
 }
 
 func (c *Cache) Backfill(ctx context.Context, p BackfillParams) error {
@@ -283,8 +304,11 @@ func (c *Cache) Backfill(ctx context.Context, p BackfillParams) error {
 		queued++
 	}
 
-	if p.SetPendings {
-		queueSetIDs(relation.UserPendingsKey(p.UserID), p.PendingIDs, relation.UserPendingsTTL)
+	if p.SetOutgoingPendings {
+		queueSetIDs(relation.UserOutgoingPendingsKey(p.UserID), p.OutgoingPendingIDs, relation.UserPendingsTTL)
+	}
+	if p.SetIncomingPendings {
+		queueSetIDs(relation.UserIncomingPendingsKey(p.UserID), p.IncomingPendingIDs, relation.UserPendingsTTL)
 	}
 	if p.SetFriends {
 		queueSetIDs(relation.UserFriendsKey(p.UserID), p.FriendIDs, relation.UserFriendsTTL)
@@ -358,7 +382,7 @@ func (c *Cache) Backfill(ctx context.Context, p BackfillParams) error {
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		return redis.NewError(err, redis.ResourceRelation)
+		return redis.NewError(err, redis.ResourceBootstrap)
 	}
 
 	return nil

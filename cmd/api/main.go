@@ -120,6 +120,7 @@ func run(cfg *config.Config) error {
 	})
 
 	authCache := auth.NewCache(cacheClient)
+	bootstrapCache := bootstrap.NewCache(cacheClient)
 	sessionCache := auth.NewSessionCache(cacheClient)
 	shieldCache := shield.NewCache(cacheClient)
 	tokenCache := token.NewCache(cacheClient)
@@ -154,7 +155,11 @@ func run(cfg *config.Config) error {
 		dbStore,
 	)
 	bootstrapSvc := bootstrap.NewService(
-		cachedUserRepo,
+		bootstrapCache,
+		channelRepo,
+		memberRepo,
+		relationRepo,
+		userRepo,
 	)
 	gatewaySvc := gateway.NewService(
 		gatewayCache,

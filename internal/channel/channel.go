@@ -165,30 +165,22 @@ func NewDTO(c *Channel) *ChannelDTO {
 	}
 }
 
-func NewDTOs(channels []*Channel) []ChannelDTO {
-	if len(channels) == 0 {
-		return nil
-	}
-
-	dtos := make([]ChannelDTO, 0, len(channels))
+func NewDTOs(channels []*Channel) []*ChannelDTO {
+	dtos := make([]*ChannelDTO, 0, len(channels))
 	for _, c := range channels {
 		if dto := NewDTO(c); dto != nil {
-			dtos = append(dtos, *dto)
+			dtos = append(dtos, dto)
 		}
 	}
 
 	return dtos
 }
 
-func NewDTOMap(channels map[uuid.UUID]*Channel) map[uuid.UUID]ChannelDTO {
-	if len(channels) == 0 {
-		return make(map[uuid.UUID]ChannelDTO)
-	}
-
-	dtos := make(map[uuid.UUID]ChannelDTO, len(channels))
+func NewDTOsMap(channels map[uuid.UUID]*Channel) map[uuid.UUID]*ChannelDTO {
+	dtos := make(map[uuid.UUID]*ChannelDTO, len(channels))
 	for id, c := range channels {
 		if dto := NewDTO(c); dto != nil {
-			dtos[id] = *dto
+			dtos[id] = dto
 		}
 	}
 

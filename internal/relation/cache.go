@@ -1,6 +1,7 @@
 package relation
 
 import (
+	"bonfire-api/internal/channel"
 	"bonfire-api/internal/redis"
 	"context"
 	"time"
@@ -18,13 +19,19 @@ var (
 func userIncomingPendingsKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":incoming_pendings"
 }
+
 func userOutgoingPendingsKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":outgoing_pendings"
 }
-func userFriendsKey(id uuid.UUID) string { return "user:" + "{" + id.String() + "}" + ":friends" }
+
+func userFriendsKey(id uuid.UUID) string {
+	return "user:" + "{" + id.String() + "}" + ":friends"
+}
+
 func userIncomingBlocksKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":incoming_blocks"
 }
+
 func userOutgoingBlocksKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":outgoing_blocks"
 }
@@ -85,14 +92,47 @@ func (c *Cache) DeleteFriendsPair(ctx context.Context, actorID, peerID uuid.UUID
 	return c.deleteKeys(ctx, userFriendsKey(actorID), userFriendsKey(peerID))
 }
 
-func (c *Cache) DeleteNewFriendsPair(ctx context.Context, actorID, peerID uuid.UUID) error {
-	return c.deleteKeys(
-		ctx,
+func (c *Cache) HandleNewFriends(
+	ctx context.Context,
+	actorID, peerID uuid.UUID,
+	ch *channel.Channel,
+) error {
+	keys := []string{
 		userOutgoingPendingsKey(actorID),
 		userIncomingPendingsKey(peerID),
 		userFriendsKey(actorID),
 		userFriendsKey(peerID),
+		channel.UserChannelMembersKey(actorID),
+		channel.UserChannelMembersKey(peerID),
+	}
+
+	var (
+		chKey   string
+		chBytes []byte
+		err     error
 	)
+	if ch != nil {
+		chKey = channel.ChannelKey(ch.ID)
+		chBytes, err = channel.MarshalChannel(ch)
+		if err != nil {
+			return redis.ErrResourceMarshalFailed().
+				Meta("resource", redis.ResourceChannel.String()).
+				Meta("key", chKey).
+				Wrap(err)
+		}
+	}
+
+	pipe := c.client.Pipeline()
+	pipe.Del(ctx, keys...)
+	if len(chBytes) > 0 {
+		pipe.Set(ctx, chKey, chBytes, channel.ChannelTTL)
+	}
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return redis.NewError(err, redis.ResourceRelation)
+	}
+
+	return nil
 }
 
 func (c *Cache) DeleteBlocksPair(ctx context.Context, actorID, peerID uuid.UUID) error {

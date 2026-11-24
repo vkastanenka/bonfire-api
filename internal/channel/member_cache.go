@@ -1,49 +1,98 @@
 package channel
 
-// import (
-// 	"context"
+import (
+	"bonfire-api/internal/pkg/errs"
+	"bonfire-api/internal/redis"
+	"context"
+	"encoding/json"
+	"time"
 
-// 	"bonfire-api/internal/channel"
-// 	"bonfire-api/internal/redis"
+	"github.com/google/uuid"
+	redisdriver "github.com/redis/go-redis/v9"
+)
 
-// 	"github.com/google/uuid"
-// 	redisdriver "github.com/redis/go-redis/v9"
-// )
+const (
+	UserChannelsMembersTTL = 24 * time.Hour
+)
 
-// func channelMembersKey(id uuid.UUID) string { return "{channel:" + id.String() + "}:members" }
+func UserChannelMembersKey(id uuid.UUID) string {
+	return "user:" + "{" + id.String() + "}" + ":channel_members"
+}
 
-// type MemberCache struct {
-// 	client redisdriver.Cmdable
-// }
+type MemberCache struct {
+	client redisdriver.Cmdable
+}
 
-// func NewMemberCache(client redisdriver.Cmdable) *MemberCache {
-// 	return &MemberCache{client: client}
-// }
+func NewMemberCache(client redisdriver.Cmdable) *MemberCache {
+	return &MemberCache{client: client}
+}
 
-// func (c *MemberCache) Get(
-// 	ctx context.Context,
-// 	channelID, userID uuid.UUID,
-// ) (*channel.Member, error) {
-// 	if channelID == uuid.Nil || userID == uuid.Nil {
-// 		return nil, nil
-// 	}
+func (c *MemberCache) GetUserMembers(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*Member, error) {
+	_, _, members, err := redis.GetHashMapKeyVals(
+		ctx,
+		c.client,
+		redis.ResourceMember,
+		UserChannelMembersKey(userID),
+		func(raw string) (*Member, error) {
+			return unmarshalMember([]byte(raw))
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(members) == 0 {
+		return nil, nil
+	}
 
-// 	rawBytes, err := c.client.HGet(ctx, channelMembersKey(channelID), userID.String()).Bytes()
-// 	if err != nil {
-// 		if redis.IsCacheMiss(err) {
-// 			return nil, nil
-// 		}
-// 		return nil, redis.NewError(err, redis.ScopeMember)
-// 	}
+	return members, nil
+}
 
-// 	member, err := unmarshalMember(rawBytes)
-// 	if err != nil {
-// 		_ = c.Invalidate(ctx, channelID, userID)
-// 		return nil, nil
-// 	}
+func (c *MemberCache) SetUserMembers(
+	ctx context.Context,
+	userID uuid.UUID,
+	members map[uuid.UUID]*Member,
+) error {
+	if len(members) == 0 {
+		return nil
+	}
 
-// 	return member, nil
-// }
+	return redis.SetHashMapKeyVals(
+		ctx,
+		c.client,
+		redis.ResourceMember,
+		UserChannelMembersKey(userID),
+		members,
+		UserChannelsMembersTTL,
+		uuid.UUID.String,
+		marshalMember,
+	)
+}
+
+func unmarshalMember(data []byte) (*Member, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	var m Member
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+
+	return &m, nil
+}
+
+func marshalMember(m *Member) ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+
+	bytes, err := json.Marshal(m)
+	if err != nil {
+		return nil, errs.Internal("Failed to marshal channel member json.").Wrap(err)
+	}
+
+	return bytes, nil
+}
 
 // func (c *MemberCache) Invalidate(ctx context.Context, channelID, userID uuid.UUID) error {
 // 	if err := c.client.HDel(ctx, channelMembersKey(channelID), userID.String()).Err(); err != nil {
@@ -75,7 +124,7 @@ package channel
 // 	return nil
 // }
 
-// func (c *MemberCache) SetUserMembers(ctx context.Context, userID uuid.UUID, members []*channel.Member) error {
+// func (c *MemberCache) SetUserMembers(ctx context.Context, userID uuid.UUID, members []*Member) error {
 // 	if userID == uuid.Nil || len(members) == 0 {
 // 		return nil
 // 	}
@@ -123,7 +172,7 @@ package channel
 // 	return nil
 // }
 
-// func (c *MemberCache) Add(ctx context.Context, channelID uuid.UUID, members []*channel.Member) error {
+// func (c *MemberCache) Add(ctx context.Context, channelID uuid.UUID, members []*Member) error {
 // 	if len(members) == 0 {
 // 		return nil
 // 	}
@@ -189,9 +238,9 @@ package channel
 // func (c *MemberCache) GetBatchByChannelIDs(
 // 	ctx context.Context,
 // 	channelIDs []uuid.UUID,
-// ) (map[uuid.UUID][]*channel.Member, []uuid.UUID, error) {
+// ) (map[uuid.UUID][]*Member, []uuid.UUID, error) {
 // 	if len(channelIDs) == 0 {
-// 		return make(map[uuid.UUID][]*channel.Member), nil, nil
+// 		return make(map[uuid.UUID][]*Member), nil, nil
 // 	}
 
 // 	keys := make([]string, 0, len(channelIDs))
@@ -210,7 +259,7 @@ package channel
 // 		return nil, nil, err
 // 	}
 
-// 	found := make(map[uuid.UUID][]*channel.Member, len(validIDs))
+// 	found := make(map[uuid.UUID][]*Member, len(validIDs))
 // 	var missing []uuid.UUID
 
 // 	for i, rawMap := range rawMaps {
@@ -220,7 +269,7 @@ package channel
 // 			continue
 // 		}
 
-// 		members := make([]*channel.Member, 0, len(rawMap))
+// 		members := make([]*Member, 0, len(rawMap))
 // 		corrupted := false
 
 // 		for _, rawJSON := range rawMap {
@@ -244,7 +293,7 @@ package channel
 
 // func (c *MemberCache) SetBatchByChannelIDs(
 // 	ctx context.Context,
-// 	channelMembersMap map[uuid.UUID][]*channel.Member,
+// 	channelMembersMap map[uuid.UUID][]*Member,
 // ) error {
 // 	if len(channelMembersMap) == 0 {
 // 		return nil

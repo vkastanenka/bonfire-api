@@ -525,7 +525,7 @@ func (s *Service) onFriendAdded(
 	ch *channel.Channel,
 	actorMember, peerMember *channel.Member,
 ) (*user.User, gateway.Presence) {
-	s.invalidateCache(ctx, "new_friends", peerID, userID, s.cache.DeleteNewFriendsPair)
+	s.handleNewFriendsCache(ctx, userID, peerID, ch)
 
 	ids := []uuid.UUID{userID, peerID}
 	users, presences := s.loadUsersAndPresences(ctx, ids, userID, peerID)
@@ -656,6 +656,27 @@ func (s *Service) invalidateCache(
 		slog.WarnContext(cacheCtx, "failed to invalidate cache pair",
 			slog.String("cache_type", kind),
 			slog.String("actor_id", actorID.String()),
+			slog.String("peer_id", peerID.String()),
+			slog.Any("error", err),
+		)
+	}
+}
+
+func (s *Service) handleNewFriendsCache(
+	ctx context.Context,
+	userID, peerID uuid.UUID,
+	ch *channel.Channel,
+) {
+	if s.cache == nil {
+		return
+	}
+
+	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), broadcastTimeout)
+	defer cancel()
+
+	if err := s.cache.HandleNewFriends(cacheCtx, userID, peerID, ch); err != nil {
+		slog.WarnContext(cacheCtx, "failed to update cache for new friends",
+			slog.String("user_id", userID.String()),
 			slog.String("peer_id", peerID.String()),
 			slog.Any("error", err),
 		)

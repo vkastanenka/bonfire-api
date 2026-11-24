@@ -67,6 +67,19 @@ func MarshalAndSet[T any](
 	return nil
 }
 
+// Delete removes a single Redis key and wraps any Redis error with resource context.
+func Delete(
+	ctx context.Context,
+	client redisdriver.Cmdable,
+	resource Resource,
+	key string,
+) error {
+	if err := client.Del(ctx, key).Err(); err != nil {
+		return NewError(err, resource)
+	}
+	return nil
+}
+
 // GetAndUnmarshalBatch generic helper that fetches keys using MGET in chunks.
 func GetAndUnmarshalBatch[K comparable, T any](
 	ctx context.Context,
@@ -479,10 +492,10 @@ func DeleteSetPipelined(
 	return nil
 }
 
-func getHashMapKeyVals[T any](
+func GetHashMapKeyVals[T any](
 	ctx context.Context,
-	resource Resource,
 	client redisdriver.Cmdable,
+	resource Resource,
 	key string,
 	parseVal func(string) (T, error),
 ) ([]uuid.UUID, []T, map[uuid.UUID]T, error) {
@@ -534,29 +547,43 @@ func getHashMapKeyVals[T any](
 	return keyIDs, valueList, valMap, nil
 }
 
-func setHashMapKeyVals[T any](
+func SetHashMapKeyVals[K comparable, T any](
 	ctx context.Context,
-	resource Resource,
 	client redisdriver.Cmdable,
+	resource Resource,
 	key string,
-	data map[uuid.UUID]T,
+	data map[K]*T,
 	ttl time.Duration,
-	formatVal func(T) string,
+	keyFieldFn func(K) string,
+	marshalFn func(*T) ([]byte, error),
 ) error {
 	if len(data) == 0 {
 		return nil
 	}
 
-	args := make([]interface{}, 0, len(data)*2)
-	for keyID, val := range data {
-		args = append(args, keyID.String(), formatVal(val))
+	args := make([]any, 0, len(data)*2)
+	for id, entity := range data {
+		if entity == nil {
+			continue
+		}
+		raw, err := marshalFn(entity)
+		if err != nil {
+			return ErrResourceMarshalFailed().
+				Meta("resource", resource.String()).
+				Meta("key", key).
+				Wrap(err)
+		}
+		args = append(args, keyFieldFn(id), raw)
+	}
+
+	if len(args) == 0 {
+		return nil
 	}
 
 	if ttl > 0 {
 		pipe := client.Pipeline()
 		pipe.HSet(ctx, key, args...)
 		pipe.Expire(ctx, key, ttl)
-
 		if _, err := pipe.Exec(ctx); err != nil {
 			return NewError(err, resource)
 		}

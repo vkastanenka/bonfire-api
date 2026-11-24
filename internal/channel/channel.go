@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"bonfire-api/internal/pkg/errs"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,6 +95,32 @@ func (c *Channel) RecordMessage(messageID uuid.UUID, at time.Time) {
 
 func (c *Channel) touch(at time.Time) {
 	c.UpdatedAt = at.UTC()
+}
+
+func UnmarshalChannel(data []byte) (*Channel, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	var ch Channel
+	if err := json.Unmarshal(data, &ch); err != nil {
+		return nil, err
+	}
+
+	return &ch, nil
+}
+
+func MarshalChannel(ch *Channel) ([]byte, error) {
+	if ch == nil {
+		return nil, nil
+	}
+
+	bytes, err := json.Marshal(ch)
+	if err != nil {
+		return nil, errs.Internal("Failed to marshal channel json.").Wrap(err)
+	}
+
+	return bytes, nil
 }
 
 type ChannelDTO struct {

@@ -1,201 +1,199 @@
 package channel
 
-// import (
-// 	"context"
-// 	"log/slog"
-// 	"time"
+import (
+	"context"
+	"log/slog"
+	"time"
 
-// 	"bonfire-api/internal/channel"
-// 	"bonfire-api/internal/pkg/errs"
-// 	"bonfire-api/internal/pkg/helpers"
+	"github.com/google/uuid"
+)
 
-// 	"github.com/google/uuid"
-// )
+const (
+	memberCacheWarmTimeout = 2 * time.Second
+	defaultUserMemberLimit = 200
+)
 
-// type CachedMemberRepository struct {
-// 	cache        MemberCache
-// 	channelCache ChannelCache
-// 	repo         *MemberRepository
-// }
+type CachedMemberRepository struct {
+	cache *MemberCache
+	repo  *MemberRepository
+}
 
-// func NewCachedMemberRepository(
-// 	cache MemberCache,
-// 	channelCache ChannelCache,
-// 	repo *MemberRepository,
-// ) *CachedMemberRepository {
-// 	return &CachedMemberRepository{
-// 		cache:        cache,
-// 		channelCache: channelCache,
-// 		repo:         repo,
-// 	}
-// }
+func NewCachedMemberRepository(cache *MemberCache, repo *MemberRepository) *CachedMemberRepository {
+	return &CachedMemberRepository{
+		cache: cache,
+		repo:  repo,
+	}
+}
 
-// func (r *CachedMemberRepository) Get(ctx context.Context, channelID, userID uuid.UUID) (*channel.Member, error) {
-// 	mem, err := r.cache.Get(ctx, channelID, userID)
-// 	if err == nil && mem != nil {
-// 		return mem, nil
-// 	}
+func (r *CachedMemberRepository) GetIDsByChannelID(
+	ctx context.Context,
+	channelID uuid.UUID,
+) ([]uuid.UUID, error) {
+	if r.cache != nil {
+		ids, err := r.cache.GetIDsByChannelID(ctx, channelID)
+		if err == nil && len(ids) > 0 {
+			return ids, nil
+		}
+		if err != nil {
+			slog.WarnContext(ctx, "redis channel member IDs cache read failure, falling back to database",
+				slog.String("channel_id", channelID.String()),
+				slog.Any("error", err),
+			)
+		}
+	}
 
-// 	if err != nil {
-// 		slog.WarnContext(ctx, "redis channel member cache read failure, falling back to database",
-// 			slog.String("channel_id", channelID.String()),
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", err),
-// 		)
-// 	}
+	members, err := r.repo.GetBatchByChannelID(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
 
-// 	mem, err = r.repo.Get(ctx, channelID, userID)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	ids := extractMemberUserIDs(members)
+	if r.cache != nil && len(ids) > 0 {
+		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), memberCacheWarmTimeout)
+		defer cancel()
 
-// 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 	defer cancel()
+		if setErr := r.cache.SetIDsByChannelID(cacheCtx, channelID, ids); setErr != nil {
+			slog.WarnContext(cacheCtx, "failed to populate channel member IDs cache after database read",
+				slog.String("channel_id", channelID.String()),
+				slog.Any("error", setErr),
+			)
+		}
+	}
 
-// 	if setErr := r.cache.Add(cacheCtx, channelID, []*channel.Member{mem}); setErr != nil {
-// 		slog.WarnContext(cacheCtx, "failed to populate channel member cache after database read",
-// 			slog.String("channel_id", channelID.String()),
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", setErr),
-// 		)
-// 	}
+	return ids, nil
+}
 
-// 	return mem, nil
-// }
+func (r *CachedMemberRepository) GetBatchIDsByChannelIDs(
+	ctx context.Context,
+	channelIDs []uuid.UUID,
+) (map[uuid.UUID][]uuid.UUID, error) {
+	if len(channelIDs) == 0 {
+		return map[uuid.UUID][]uuid.UUID{}, nil
+	}
 
-// func (r *CachedMemberRepository) GetBatchByChannelID(
-// 	ctx context.Context,
-// 	channelID uuid.UUID,
-// ) ([]*channel.Member, error) {
-// 	memberMap, err := r.GetBatchByChannelIDs(ctx, []uuid.UUID{channelID})
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	var (
+		found   map[uuid.UUID][]uuid.UUID
+		missing []uuid.UUID
+	)
 
-// 	members, ok := memberMap[channelID]
-// 	if !ok {
-// 		return nil, errs.NotFound("Channel members not found.").
-// 			Reason("CHANNEL_MEMBERS_NOT_FOUND").
-// 			Meta("channelID", channelID.String())
-// 	}
+	if r.cache != nil {
+		var err error
+		found, missing, err = r.cache.GetBatchIDsByChannelIDs(ctx, channelIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "redis batch channel member IDs cache read failure, falling back to database",
+				slog.Int("requested_count", len(channelIDs)),
+				slog.Any("error", err),
+			)
+			found = make(map[uuid.UUID][]uuid.UUID, len(channelIDs))
+			missing = channelIDs
+		}
+	} else {
+		found = make(map[uuid.UUID][]uuid.UUID, len(channelIDs))
+		missing = channelIDs
+	}
 
-// 	return members, nil
-// }
+	result := make(map[uuid.UUID][]uuid.UUID, len(channelIDs))
+	for chID, ids := range found {
+		if len(ids) > 0 {
+			result[chID] = ids
+		}
+	}
 
-// func (r *CachedMemberRepository) GetBatchByChannelIDs(
-// 	ctx context.Context,
-// 	channelIDs []uuid.UUID,
-// ) (map[uuid.UUID][]*channel.Member, error) {
-// 	if len(channelIDs) == 0 {
-// 		return make(map[uuid.UUID][]*channel.Member), nil
-// 	}
+	if len(missing) == 0 {
+		return result, nil
+	}
 
-// 	found, missing, err := r.cache.GetBatchByChannelIDs(ctx, channelIDs)
-// 	if err != nil {
-// 		slog.WarnContext(ctx, "redis channel members batch cache read failure, falling back to database",
-// 			slog.Int("requested_count", len(channelIDs)),
-// 			slog.Any("error", err),
-// 		)
-// 		missing = channelIDs
-// 		found = make(map[uuid.UUID][]*channel.Member)
-// 	}
+	dbMembersByCh, err := r.repo.GetBatchByChannelIDs(ctx, missing)
+	if err != nil {
+		return nil, err
+	}
 
-// 	if len(missing) == 0 {
-// 		return found, nil
-// 	}
+	warmMap := make(map[uuid.UUID][]uuid.UUID, len(dbMembersByCh))
+	for chID, members := range dbMembersByCh {
+		ids := extractMemberUserIDs(members)
+		result[chID] = ids
+		if len(ids) > 0 {
+			warmMap[chID] = ids
+		}
+	}
 
-// 	missing = helpers.DedupeIDs(missing)
+	if r.cache != nil && len(warmMap) > 0 {
+		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), memberCacheWarmTimeout)
+		defer cancel()
 
-// 	dbMembersMap, err := r.repo.GetBatchByChannelIDs(ctx, missing)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+		if setErr := r.cache.SetBatchIDsByChannelIDs(cacheCtx, warmMap); setErr != nil {
+			slog.WarnContext(cacheCtx, "failed to populate batch channel member IDs cache after database read",
+				slog.Int("channel_count", len(warmMap)),
+				slog.Any("error", setErr),
+			)
+		}
+	}
 
-// 	if len(dbMembersMap) > 0 {
-// 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 		defer cancel()
+	return result, nil
+}
 
-// 		if setErr := r.cache.SetBatchByChannelIDs(cacheCtx, dbMembersMap); setErr != nil {
-// 			slog.WarnContext(cacheCtx, "failed to populate channel members batch cache after database read",
-// 				slog.Int("missing_count", len(missing)),
-// 				slog.Any("error", setErr),
-// 			)
-// 		}
-// 	}
+func (r *CachedMemberRepository) GetVisibleByUserID(
+	ctx context.Context,
+	userID uuid.UUID,
+) (map[uuid.UUID]*Member, error) {
+	if r.cache != nil {
+		members, err := r.cache.GetVisibleByUserID(ctx, userID)
+		if err == nil && len(members) > 0 {
+			return members, nil
+		}
+		if err != nil {
+			slog.WarnContext(ctx, "redis user channel members cache read failure, falling back to database",
+				slog.String("user_id", userID.String()),
+				slog.Any("error", err),
+			)
+		}
+	}
 
-// 	for channelID, members := range dbMembersMap {
-// 		found[channelID] = members
-// 	}
+	dbMembers, err := r.repo.ListVisibleByUserID(ctx, userID, defaultUserMemberLimit)
+	if err != nil {
+		return nil, err
+	}
 
-// 	return found, nil
-// }
+	membersMap := make(map[uuid.UUID]*Member, len(dbMembers))
+	for _, m := range dbMembers {
+		if m != nil {
+			membersMap[m.ChannelID] = m
+		}
+	}
 
-// func (r *CachedMemberRepository) ListVisibleByUserID(
-// 	ctx context.Context,
-// 	userID uuid.UUID,
-// 	limit int,
-// ) ([]*channel.Member, error) {
-// 	if userID == uuid.Nil {
-// 		return []*channel.Member{}, nil
-// 	}
+	if r.cache != nil && len(membersMap) > 0 {
+		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), memberCacheWarmTimeout)
+		defer cancel()
 
-// 	channelIDs, hit, err := r.channelCache.GetUserChannelIDs(ctx, userID)
-// 	if err != nil {
-// 		slog.WarnContext(ctx, "redis user channel index read failed, falling back to db",
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", err),
-// 		)
-// 	} else if hit {
-// 		if len(channelIDs) == 0 {
-// 			return []*channel.Member{}, nil
-// 		}
+		if setErr := r.cache.SetVisibleByUserID(cacheCtx, userID, membersMap); setErr != nil {
+			slog.WarnContext(cacheCtx, "failed to populate user channel members cache after database read",
+				slog.String("user_id", userID.String()),
+				slog.Int("count", len(membersMap)),
+				slog.Any("error", setErr),
+			)
+		}
+	}
 
-// 		targetIDs := channelIDs
-// 		if limit > 0 && len(targetIDs) > limit {
-// 			targetIDs = targetIDs[:limit]
-// 		}
+	return membersMap, nil
+}
 
-// 		foundMap, missingIDs, err := r.cache.GetBatchByChannelIDs(ctx, targetIDs)
-// 		if err == nil && len(missingIDs) == 0 {
-// 			result := make([]*channel.Member, 0, len(targetIDs))
-// 			for _, chID := range targetIDs {
-// 				members := foundMap[chID]
-// 				for _, m := range members {
-// 					if m != nil && m.UserID == userID {
-// 						result = append(result, m)
-// 						break
-// 					}
-// 				}
-// 			}
-// 			return result, nil
-// 		}
+func extractMemberUserIDs(members []*Member) []uuid.UUID {
+	if len(members) == 0 {
+		return nil
+	}
 
-// 		if err != nil {
-// 			slog.WarnContext(ctx, "redis member batch read failed, falling back to db",
-// 				slog.String("user_id", userID.String()),
-// 				slog.Any("error", err),
-// 			)
-// 		}
-// 	}
+	ids := make([]uuid.UUID, 0, len(members))
+	seen := make(map[uuid.UUID]struct{}, len(members))
+	for _, m := range members {
+		if m == nil {
+			continue
+		}
+		if _, ok := seen[m.UserID]; ok {
+			continue
+		}
+		seen[m.UserID] = struct{}{}
+		ids = append(ids, m.UserID)
+	}
 
-// 	dbMembers, err := r.repo.ListVisibleByUserID(ctx, userID, limit)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	if len(dbMembers) == 0 {
-// 		return dbMembers, nil
-// 	}
-
-// 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-// 	defer cancel()
-
-// 	if backfillErr := r.cache.SetUserMembers(cacheCtx, userID, dbMembers); backfillErr != nil {
-// 		slog.WarnContext(cacheCtx, "failed to backfill user members cache",
-// 			slog.String("user_id", userID.String()),
-// 			slog.Any("error", backfillErr),
-// 		)
-// 	}
-
-// 	return dbMembers, nil
-// }
+	return ids
+}

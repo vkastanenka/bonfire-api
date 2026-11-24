@@ -32,15 +32,15 @@ func NewMemberCache(client redisdriver.Cmdable) *MemberCache {
 	return &MemberCache{client: client}
 }
 
-func (c *MemberCache) GetChannelMemberIDs(ctx context.Context, chID uuid.UUID) ([]uuid.UUID, error) {
+func (c *MemberCache) GetIDsByChannelID(ctx context.Context, chID uuid.UUID) ([]uuid.UUID, error) {
 	return c.getIDs(ctx, chID, ChannelMembersKey)
 }
 
-func (c *MemberCache) SetChannelMemberIDs(ctx context.Context, chID uuid.UUID, memberIDs []uuid.UUID) error {
+func (c *MemberCache) SetIDsByChannelID(ctx context.Context, chID uuid.UUID, memberIDs []uuid.UUID) error {
 	return c.setIDs(ctx, chID, memberIDs, ChannelMembersKey, ChannelMembersTTL)
 }
 
-func (c *MemberCache) GetBatchChannelMemberIDs(
+func (c *MemberCache) GetBatchIDsByChannelIDs(
 	ctx context.Context,
 	chIDs []uuid.UUID,
 ) (map[uuid.UUID][]uuid.UUID, []uuid.UUID, error) {
@@ -51,7 +51,7 @@ func (c *MemberCache) GetBatchChannelMemberIDs(
 	return redis.GetBatchSetIDs(ctx, c.client, redis.ResourceMember, ChannelMembersKey, chIDs)
 }
 
-func (c *MemberCache) SetBatchChannelMemberIDs(
+func (c *MemberCache) SetBatchIDsByChannelIDs(
 	ctx context.Context,
 	channelMembersMap map[uuid.UUID][]uuid.UUID,
 ) error {
@@ -69,7 +69,7 @@ func (c *MemberCache) SetBatchChannelMemberIDs(
 	)
 }
 
-func (c *MemberCache) GetUserMembers(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*Member, error) {
+func (c *MemberCache) GetVisibleByUserID(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*Member, error) {
 	_, _, members, err := redis.GetHashMapKeyVals(
 		ctx,
 		c.client,
@@ -89,7 +89,7 @@ func (c *MemberCache) GetUserMembers(ctx context.Context, userID uuid.UUID) (map
 	return members, nil
 }
 
-func (c *MemberCache) SetUserMembers(
+func (c *MemberCache) SetVisibleByUserID(
 	ctx context.Context,
 	userID uuid.UUID,
 	members map[uuid.UUID]*Member,

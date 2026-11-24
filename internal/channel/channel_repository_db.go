@@ -22,6 +22,7 @@ func NewChannelRepository(store *db.Store) *ChannelRepository {
 func (r *ChannelRepository) Create(ctx context.Context, ch *Channel) (*Channel, error) {
 	row, err := r.store.ChannelCreate(ctx, db.ChannelCreateParams{
 		ID:            db.ToUUID(ch.ID),
+		OwnerID:       db.ToUUIDPtr(ch.OwnerID),
 		LastMessageID: db.ToUUIDPtr(ch.LastMessageID),
 		CreatedAt:     db.ToTimestamptz(ch.CreatedAt),
 		UpdatedAt:     db.ToTimestamptz(ch.UpdatedAt),
@@ -91,6 +92,24 @@ func (r *ChannelRepository) UpdateGroup(
 	return channelFromRow(row), nil
 }
 
+func (r *ChannelRepository) UpdateOwnerID(
+	ctx context.Context,
+	id uuid.UUID,
+	ownerID uuid.UUID,
+	updatedAt time.Time,
+) (*Channel, error) {
+	row, err := r.store.ChannelUpdateOwnerID(ctx, db.ChannelUpdateOwnerIDParams{
+		ID:        db.ToUUID(id),
+		OwnerID:   db.ToUUID(ownerID),
+		UpdatedAt: db.ToTimestamptz(updatedAt),
+	})
+	if err != nil {
+		return nil, db.NewError(err, db.ResourceChannel)
+	}
+
+	return channelFromRow(row), nil
+}
+
 func (r *ChannelRepository) UpdateLastMessage(
 	ctx context.Context,
 	id uuid.UUID,
@@ -124,6 +143,7 @@ func channelFromRow(row db.Channel) *Channel {
 	return Reconstitute(
 		db.FromUUID(row.ID),
 		ChannelType(row.Type),
+		db.FromUUIDPtr(row.OwnerID),
 		db.FromTextPtr(row.Name),
 		db.FromTextPtr(row.IconURL),
 		db.FromUUIDPtr(row.LastMessageID),

@@ -12,15 +12,16 @@ import (
 )
 
 const channelCreate = `-- name: ChannelCreate :one
-INSERT INTO channels(id, last_message_id, created_at, updated_at, last_message_at, type, name, icon_url)
-    VALUES ($1::uuid, $2::uuid, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6::smallint, $7::text, $8::text)
+INSERT INTO channels(id, last_message_id, owner_id, created_at, updated_at, last_message_at, type, name, icon_url)
+    VALUES ($1::uuid, $2::uuid, $3::uuid, $4::timestamptz, $5::timestamptz, $6::timestamptz, $7::smallint, $8::text, $9::text)
 RETURNING
-    channels.id, channels.last_message_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
 `
 
 type ChannelCreateParams struct {
 	ID            pgtype.UUID        `json:"id"`
 	LastMessageID pgtype.UUID        `json:"last_message_id"`
+	OwnerID       pgtype.UUID        `json:"owner_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	LastMessageAt pgtype.Timestamptz `json:"last_message_at"`
@@ -33,6 +34,7 @@ func (q *Queries) ChannelCreate(ctx context.Context, arg ChannelCreateParams) (C
 	row := q.db.QueryRow(ctx, channelCreate,
 		arg.ID,
 		arg.LastMessageID,
+		arg.OwnerID,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.LastMessageAt,
@@ -44,6 +46,7 @@ func (q *Queries) ChannelCreate(ctx context.Context, arg ChannelCreateParams) (C
 	err := row.Scan(
 		&i.ID,
 		&i.LastMessageID,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastMessageAt,
@@ -66,7 +69,7 @@ func (q *Queries) ChannelDelete(ctx context.Context, id pgtype.UUID) error {
 
 const channelGet = `-- name: ChannelGet :one
 SELECT
-    channels.id, channels.last_message_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
 FROM
     channels
 WHERE
@@ -79,6 +82,7 @@ func (q *Queries) ChannelGet(ctx context.Context, id pgtype.UUID) (Channel, erro
 	err := row.Scan(
 		&i.ID,
 		&i.LastMessageID,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastMessageAt,
@@ -91,7 +95,7 @@ func (q *Queries) ChannelGet(ctx context.Context, id pgtype.UUID) (Channel, erro
 
 const channelGetBatch = `-- name: ChannelGetBatch :many
 SELECT
-    channels.id, channels.last_message_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
 FROM
     channels
 WHERE
@@ -110,6 +114,47 @@ func (q *Queries) ChannelGetBatch(ctx context.Context, ids []pgtype.UUID) ([]Cha
 		if err := rows.Scan(
 			&i.ID,
 			&i.LastMessageID,
+			&i.OwnerID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastMessageAt,
+			&i.Type,
+			&i.Name,
+			&i.IconURL,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const channelGetBatchByOwnerID = `-- name: ChannelGetBatchByOwnerID :many
+SELECT
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+FROM
+    channels
+WHERE
+    owner_id = ANY ($1::uuid[])
+    AND type = 2
+`
+
+func (q *Queries) ChannelGetBatchByOwnerID(ctx context.Context, ownerIds []pgtype.UUID) ([]Channel, error) {
+	rows, err := q.db.Query(ctx, channelGetBatchByOwnerID, ownerIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Channel
+	for rows.Next() {
+		var i Channel
+		if err := rows.Scan(
+			&i.ID,
+			&i.LastMessageID,
+			&i.OwnerID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.LastMessageAt,
@@ -129,7 +174,7 @@ func (q *Queries) ChannelGetBatch(ctx context.Context, ids []pgtype.UUID) ([]Cha
 
 const channelGetForUpdate = `-- name: ChannelGetForUpdate :one
 SELECT
-    channels.id, channels.last_message_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
 FROM
     channels
 WHERE
@@ -143,6 +188,7 @@ func (q *Queries) ChannelGetForUpdate(ctx context.Context, id pgtype.UUID) (Chan
 	err := row.Scan(
 		&i.ID,
 		&i.LastMessageID,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastMessageAt,
@@ -164,7 +210,7 @@ WHERE
     id = $4::uuid
     AND type = 2
 RETURNING
-    channels.id, channels.last_message_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
 `
 
 type ChannelUpdateGroupParams struct {
@@ -185,6 +231,7 @@ func (q *Queries) ChannelUpdateGroup(ctx context.Context, arg ChannelUpdateGroup
 	err := row.Scan(
 		&i.ID,
 		&i.LastMessageID,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastMessageAt,
@@ -205,7 +252,7 @@ SET
 WHERE
     id = $4::uuid
 RETURNING
-    channels.id, channels.last_message_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
 `
 
 type ChannelUpdateLastMessageParams struct {
@@ -226,6 +273,43 @@ func (q *Queries) ChannelUpdateLastMessage(ctx context.Context, arg ChannelUpdat
 	err := row.Scan(
 		&i.ID,
 		&i.LastMessageID,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastMessageAt,
+		&i.Type,
+		&i.Name,
+		&i.IconURL,
+	)
+	return i, err
+}
+
+const channelUpdateOwnerID = `-- name: ChannelUpdateOwnerID :one
+UPDATE
+    channels
+SET
+    owner_id = $1::uuid,
+    updated_at = $2::timestamptz
+WHERE
+    id = $3::uuid
+    AND type = 2
+RETURNING
+    channels.id, channels.last_message_id, channels.owner_id, channels.created_at, channels.updated_at, channels.last_message_at, channels.type, channels.name, channels.icon_url
+`
+
+type ChannelUpdateOwnerIDParams struct {
+	OwnerID   pgtype.UUID        `json:"owner_id"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID        pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) ChannelUpdateOwnerID(ctx context.Context, arg ChannelUpdateOwnerIDParams) (Channel, error) {
+	row := q.db.QueryRow(ctx, channelUpdateOwnerID, arg.OwnerID, arg.UpdatedAt, arg.ID)
+	var i Channel
+	err := row.Scan(
+		&i.ID,
+		&i.LastMessageID,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastMessageAt,

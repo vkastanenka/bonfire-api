@@ -18,6 +18,7 @@ type Querier interface {
 	ChannelDelete(ctx context.Context, id pgtype.UUID) error
 	ChannelGet(ctx context.Context, id pgtype.UUID) (Channel, error)
 	ChannelGetBatch(ctx context.Context, ids []pgtype.UUID) ([]Channel, error)
+	ChannelGetBatchByOwnerID(ctx context.Context, ownerIds []pgtype.UUID) ([]Channel, error)
 	ChannelGetForUpdate(ctx context.Context, id pgtype.UUID) (Channel, error)
 	ChannelMemberCountBatchByUserID(ctx context.Context, userIds []pgtype.UUID) ([]ChannelMemberCountBatchByUserIDRow, error)
 	ChannelMemberCountByChannelID(ctx context.Context, channelID pgtype.UUID) (int64, error)
@@ -34,6 +35,7 @@ type Querier interface {
 	ChannelMemberUpdatePinnedAt(ctx context.Context, arg ChannelMemberUpdatePinnedAtParams) (ChannelMember, error)
 	ChannelUpdateGroup(ctx context.Context, arg ChannelUpdateGroupParams) (Channel, error)
 	ChannelUpdateLastMessage(ctx context.Context, arg ChannelUpdateLastMessageParams) (Channel, error)
+	ChannelUpdateOwnerID(ctx context.Context, arg ChannelUpdateOwnerIDParams) (Channel, error)
 	MessageCountByChannelID(ctx context.Context, channelID pgtype.UUID) (int64, error)
 	MessageCreate(ctx context.Context, arg MessageCreateParams) (Message, error)
 	MessageCreateBatch(ctx context.Context, payload []byte) ([]Message, error)

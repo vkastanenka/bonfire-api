@@ -18,6 +18,7 @@ const (
 type Channel struct {
 	ID            uuid.UUID
 	Type          ChannelType
+	OwnerID       *uuid.UUID
 	Name          *string
 	IconURL       *string
 	LastMessageID *uuid.UUID
@@ -26,11 +27,12 @@ type Channel struct {
 	UpdatedAt     time.Time
 }
 
-func New(id uuid.UUID, chType ChannelType, now time.Time) *Channel {
+func New(id uuid.UUID, chType ChannelType, ownerID *uuid.UUID, now time.Time) *Channel {
 	nowUTC := now.UTC()
 	return &Channel{
 		ID:            id,
 		Type:          chType,
+		OwnerID:       ownerID,
 		LastMessageAt: nowUTC,
 		CreatedAt:     nowUTC,
 		UpdatedAt:     nowUTC,
@@ -38,16 +40,17 @@ func New(id uuid.UUID, chType ChannelType, now time.Time) *Channel {
 }
 
 func NewDirect(id uuid.UUID, now time.Time) *Channel {
-	return New(id, ChannelTypeDirect, now)
+	return New(id, ChannelTypeDirect, nil, now)
 }
 
-func NewGroup(id uuid.UUID, now time.Time) *Channel {
-	return New(id, ChannelTypeGroup, now)
+func NewGroup(id uuid.UUID, ownerID *uuid.UUID, now time.Time) *Channel {
+	return New(id, ChannelTypeGroup, ownerID, now)
 }
 
 func Reconstitute(
 	id uuid.UUID,
 	chType ChannelType,
+	ownerID *uuid.UUID,
 	name *string,
 	iconURL *string,
 	lastMessageID *uuid.UUID,
@@ -58,6 +61,7 @@ func Reconstitute(
 	return &Channel{
 		ID:            id,
 		Type:          chType,
+		OwnerID:       ownerID,
 		Name:          name,
 		IconURL:       iconURL,
 		LastMessageID: lastMessageID,
@@ -69,6 +73,15 @@ func Reconstitute(
 
 func (c *Channel) IsDirect() bool { return c.Type.IsDirect() }
 func (c *Channel) IsGroup() bool  { return c.Type.IsGroup() }
+
+func (c *Channel) IsOwner(userID uuid.UUID) bool {
+	return c != nil && c.Type.IsGroup() && c.OwnerID != nil && *c.OwnerID == userID
+}
+
+func (c *Channel) UpdateOwnerID(ownerID *uuid.UUID, now time.Time) {
+	c.OwnerID = ownerID
+	c.touch(now)
+}
 
 func (c *Channel) UpdateName(name *string, now time.Time) {
 	c.Name = name
@@ -126,6 +139,7 @@ func MarshalChannel(ch *Channel) ([]byte, error) {
 type ChannelDTO struct {
 	ID            uuid.UUID   `json:"id"`
 	Type          ChannelType `json:"type"`
+	OwnerID       *uuid.UUID  `json:"ownerId,omitempty"`
 	Name          *string     `json:"name,omitempty"`
 	IconURL       *string     `json:"iconUrl,omitempty"`
 	LastMessageID *uuid.UUID  `json:"lastMessageId,omitempty"`
@@ -141,6 +155,7 @@ func NewDTO(c *Channel) *ChannelDTO {
 	return &ChannelDTO{
 		ID:            c.ID,
 		Type:          c.Type,
+		OwnerID:       c.OwnerID,
 		Name:          c.Name,
 		IconURL:       c.IconURL,
 		LastMessageID: c.LastMessageID,

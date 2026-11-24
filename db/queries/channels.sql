@@ -1,6 +1,6 @@
 -- name: ChannelCreate :one
-INSERT INTO channels(id, last_message_id, created_at, updated_at, last_message_at, type, name, icon_url)
-    VALUES (@id::uuid, sqlc.narg('last_message_id')::uuid, @created_at::timestamptz, @updated_at::timestamptz, @last_message_at::timestamptz, @type::smallint, sqlc.narg('name')::text, sqlc.narg('icon_url')::text)
+INSERT INTO channels(id, last_message_id, owner_id, created_at, updated_at, last_message_at, type, name, icon_url)
+    VALUES (@id::uuid, sqlc.narg('last_message_id')::uuid, sqlc.narg('owner_id')::uuid, @created_at::timestamptz, @updated_at::timestamptz, @last_message_at::timestamptz, @type::smallint, sqlc.narg('name')::text, sqlc.narg('icon_url')::text)
 RETURNING
     channels.*;
 
@@ -51,6 +51,18 @@ SET
     updated_at = @updated_at::timestamptz
 WHERE
     id = @id::uuid
+RETURNING
+    channels.*;
+
+-- name: ChannelUpdateOwnerID :one
+UPDATE
+    channels
+SET
+    owner_id = @owner_id::uuid,
+    updated_at = @updated_at::timestamptz
+WHERE
+    id = @id::uuid
+    AND type = 2
 RETURNING
     channels.*;
 

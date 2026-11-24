@@ -80,17 +80,23 @@ WHERE
 CREATE TABLE channels(
     id uuid PRIMARY KEY,
     last_message_id uuid,
+    owner_id uuid REFERENCES users(id),
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_message_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     type smallint NOT NULL DEFAULT 1 CONSTRAINT type_valid CHECK (type IN (1, 2)),
     name text CHECK (char_length(name) BETWEEN 1 AND 100),
-    icon_url text CHECK (char_length(icon_url) BETWEEN 1 AND 2048)
+    icon_url text CHECK (char_length(icon_url) BETWEEN 1 AND 2048),
+    CONSTRAINT owner_id_by_type CHECK ((type = 1 AND owner_id IS NULL) OR (type = 2 AND owner_id IS NOT NULL))
 );
 
 CREATE INDEX idx_channels_last_message_id ON channels(last_message_id)
 WHERE
     last_message_id IS NOT NULL;
+
+CREATE INDEX idx_channels_owner_id ON channels(owner_id)
+WHERE
+    owner_id IS NOT NULL;
 
 CREATE TABLE channel_members(
     channel_id uuid NOT NULL CONSTRAINT fk_channel_members_channel REFERENCES channels(id) ON DELETE CASCADE,

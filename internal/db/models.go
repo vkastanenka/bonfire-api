@@ -13,6 +13,7 @@ import (
 type Channel struct {
 	ID            pgtype.UUID        `json:"id"`
 	LastMessageID pgtype.UUID        `json:"last_message_id"`
+	OwnerID       pgtype.UUID        `json:"owner_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	LastMessageAt pgtype.Timestamptz `json:"last_message_at"`

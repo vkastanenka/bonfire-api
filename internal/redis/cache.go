@@ -279,8 +279,8 @@ func toBytes(raw any) ([]byte, bool) {
 // GetSetIDs retrieves members from a Redis Set key and parses them into uuid.UUID slices.
 func GetSetIDs(
 	ctx context.Context,
-	resource Resource,
 	client redisdriver.Cmdable,
+	resource Resource,
 	key string,
 ) ([]uuid.UUID, error) {
 	members, err := client.SMembers(ctx, key).Result()
@@ -309,8 +309,8 @@ func GetSetIDs(
 // SetSetIDs atomically replaces a Redis Set key in a pipeline.
 func SetSetIDs(
 	ctx context.Context,
-	resource Resource,
 	client redisdriver.Cmdable,
+	resource Resource,
 	key string,
 	ids []uuid.UUID,
 	ttl time.Duration,
@@ -472,8 +472,8 @@ func deleteSet(
 // DeleteSetPipelined deletes multiple keys in a single Redis pipeline.
 func DeleteSetPipelined(
 	ctx context.Context,
-	resource Resource,
 	client redisdriver.Cmdable,
+	resource Resource,
 	keys []string,
 ) error {
 	if len(keys) == 0 {
@@ -629,4 +629,132 @@ func getBatchHashMaps(
 	}
 
 	return results, nil
+}
+
+// GetBatchSetIDs fetches SMEMBERS for multiple set keys in chunks via pipelining,
+// returning a map of identifier to parsed UUID members and any missing identifiers.
+func GetBatchSetIDs[K comparable](
+	ctx context.Context,
+	client redisdriver.Cmdable,
+	resource Resource,
+	keyFn func(K) string,
+	identifiers []K,
+) (map[K][]uuid.UUID, []K, error) {
+	if len(identifiers) == 0 {
+		return nil, nil, nil
+	}
+
+	found := make(map[K][]uuid.UUID, len(identifiers))
+	missing := make([]K, 0, len(identifiers))
+
+	for i := 0; i < len(identifiers); i += maxBatchSize {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+
+		end := min(i+maxBatchSize, len(identifiers))
+		idChunk := identifiers[i:end]
+
+		cmds := make([]*redisdriver.StringSliceCmd, len(idChunk))
+		_, err := client.Pipelined(ctx, func(pipe redisdriver.Pipeliner) error {
+			for j, id := range idChunk {
+				cmds[j] = pipe.SMembers(ctx, keyFn(id))
+			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, redisdriver.Nil) {
+			return nil, nil, NewError(err, resource)
+		}
+
+		for j, id := range idChunk {
+			members, cmdErr := cmds[j].Result()
+			if IsCacheMiss(cmdErr) || len(members) == 0 {
+				missing = append(missing, id)
+				continue
+			}
+			if cmdErr != nil {
+				return nil, nil, NewError(cmdErr, resource)
+			}
+
+			ids := make([]uuid.UUID, 0, len(members))
+			for _, m := range members {
+				parsed, parseErr := uuid.Parse(m)
+				if parseErr != nil {
+					continue
+				}
+				ids = append(ids, parsed)
+			}
+
+			if len(ids) == 0 {
+				missing = append(missing, id)
+				continue
+			}
+
+			found[id] = ids
+		}
+	}
+
+	return found, missing, nil
+}
+
+// SetBatchSetIDs replaces multiple Redis Set keys in chunks using a single pipeline per chunk.
+func SetBatchSetIDs[K comparable](
+	ctx context.Context,
+	client redisdriver.Cmdable,
+	resource Resource,
+	keyFn func(K) string,
+	data map[K][]uuid.UUID,
+	ttl time.Duration,
+) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	type setEntry struct {
+		key     string
+		members []any
+	}
+
+	entries := make([]setEntry, 0, len(data))
+	for id, ids := range data {
+		if len(ids) == 0 {
+			continue
+		}
+		members := make([]any, len(ids))
+		for i, uid := range ids {
+			members[i] = uid.String()
+		}
+		entries = append(entries, setEntry{
+			key:     keyFn(id),
+			members: members,
+		})
+	}
+
+	if len(entries) == 0 {
+		return nil
+	}
+
+	for i := 0; i < len(entries); i += maxBatchSize {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		end := min(i+maxBatchSize, len(entries))
+		chunk := entries[i:end]
+
+		pipe := client.Pipeline()
+		for _, entry := range chunk {
+			pipe.Del(ctx, entry.key)
+			pipe.SAdd(ctx, entry.key, entry.members...)
+			if ttl > 0 {
+				pipe.Expire(ctx, entry.key, ttl)
+			}
+		}
+
+		if _, err := pipe.Exec(ctx); err != nil {
+			return NewError(err, resource)
+		}
+	}
+
+	return nil
 }

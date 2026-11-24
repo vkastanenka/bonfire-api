@@ -164,7 +164,7 @@ func (c *Cache) getIDs(
 	userID uuid.UUID,
 	keyFn func(uuid.UUID) string,
 ) ([]uuid.UUID, error) {
-	return redis.GetSetIDs(ctx, redis.ResourceRelation, c.client, keyFn(userID))
+	return redis.GetSetIDs(ctx, c.client, redis.ResourceRelation, keyFn(userID))
 }
 
 func (c *Cache) setIDs(
@@ -174,9 +174,9 @@ func (c *Cache) setIDs(
 	keyFn func(uuid.UUID) string,
 	ttl time.Duration,
 ) error {
-	return redis.SetSetIDs(ctx, redis.ResourceRelation, c.client, keyFn(userID), ids, ttl)
+	return redis.SetSetIDs(ctx, c.client, redis.ResourceRelation, keyFn(userID), ids, ttl)
 }
 
 func (c *Cache) deleteKeys(ctx context.Context, keys ...string) error {
-	return redis.DeleteSetPipelined(ctx, redis.ResourceRelation, c.client, keys)
+	return redis.DeleteSetPipelined(ctx, c.client, redis.ResourceRelation, keys)
 }

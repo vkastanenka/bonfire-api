@@ -12,8 +12,13 @@ import (
 )
 
 const (
+	ChannelMembersTTL      = 24 * time.Hour
 	UserChannelsMembersTTL = 24 * time.Hour
 )
+
+func ChannelMembersKey(id uuid.UUID) string {
+	return "channel:" + "{" + id.String() + "}" + ":members"
+}
 
 func UserChannelMembersKey(id uuid.UUID) string {
 	return "user:" + "{" + id.String() + "}" + ":channel_members"
@@ -25,6 +30,43 @@ type MemberCache struct {
 
 func NewMemberCache(client redisdriver.Cmdable) *MemberCache {
 	return &MemberCache{client: client}
+}
+
+func (c *MemberCache) GetChannelMemberIDs(ctx context.Context, chID uuid.UUID) ([]uuid.UUID, error) {
+	return c.getIDs(ctx, chID, ChannelMembersKey)
+}
+
+func (c *MemberCache) SetChannelMemberIDs(ctx context.Context, chID uuid.UUID, memberIDs []uuid.UUID) error {
+	return c.setIDs(ctx, chID, memberIDs, ChannelMembersKey, ChannelMembersTTL)
+}
+
+func (c *MemberCache) GetBatchChannelMemberIDs(
+	ctx context.Context,
+	chIDs []uuid.UUID,
+) (map[uuid.UUID][]uuid.UUID, []uuid.UUID, error) {
+	if len(chIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	return redis.GetBatchSetIDs(ctx, c.client, redis.ResourceMember, ChannelMembersKey, chIDs)
+}
+
+func (c *MemberCache) SetBatchChannelMemberIDs(
+	ctx context.Context,
+	channelMembersMap map[uuid.UUID][]uuid.UUID,
+) error {
+	if len(channelMembersMap) == 0 {
+		return nil
+	}
+
+	return redis.SetBatchSetIDs(
+		ctx,
+		c.client,
+		redis.ResourceMember,
+		ChannelMembersKey,
+		channelMembersMap,
+		ChannelMembersTTL,
+	)
 }
 
 func (c *MemberCache) GetUserMembers(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*Member, error) {
@@ -66,6 +108,24 @@ func (c *MemberCache) SetUserMembers(
 		uuid.UUID.String,
 		marshalMember,
 	)
+}
+
+func (c *MemberCache) getIDs(
+	ctx context.Context,
+	id uuid.UUID,
+	keyFn func(uuid.UUID) string,
+) ([]uuid.UUID, error) {
+	return redis.GetSetIDs(ctx, c.client, redis.ResourceMember, keyFn(id))
+}
+
+func (c *MemberCache) setIDs(
+	ctx context.Context,
+	id uuid.UUID,
+	ids []uuid.UUID,
+	keyFn func(uuid.UUID) string,
+	ttl time.Duration,
+) error {
+	return redis.SetSetIDs(ctx, c.client, redis.ResourceMember, keyFn(id), ids, ttl)
 }
 
 func unmarshalMember(data []byte) (*Member, error) {

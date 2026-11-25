@@ -57,7 +57,32 @@ func NewService(
 	}
 }
 
-func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerID uuid.UUID) (*TransitionFriendsResult, error) {
+func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, username string) (*TransitionFriendsResult, error) {
+	chID, err := uuid.NewV7()
+	if err != nil {
+		return nil, ErrIDGenerateFailed()
+	}
+
+	outgoingPendingsCount, err := s.repo.CountOutgoingPendingsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if outgoingPendingsCount >= MaxTypeLimit {
+		return nil, ErrMaxOutgoingPendingRequestsReached()
+	}
+
+	peer, err := s.userRepo.GetByUsername(ctx, username)
+	if err != nil {
+		if errs.IsNotFound(err) {
+			return nil, ErrUsernameNotFound()
+		}
+		return nil, err
+	}
+	if peer.IsDisabled() {
+		return nil, ErrUsernameNotFound()
+	}
+
+	peerID := peer.ID
 	if userID == peerID {
 		return nil, ErrCannotRequestSelf()
 	}
@@ -66,30 +91,9 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 	var savedRel *Relation
 	var createdCh *createdDirectChannel
 
-	chID, err := uuid.NewV7()
-	if err != nil {
-		return nil, ErrIDGenerateFailed()
-	}
-
 	now := time.Now()
 
 	err = s.tx.ExecTx(ctx, func(txCtx context.Context) error {
-		userFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, userID)
-		if err != nil {
-			return err
-		}
-		if userFriendsCount >= MaxTypeLimit {
-			return ErrMaxFriendsReached()
-		}
-
-		outgoingPendingsCount, err := s.repo.CountOutgoingPendingsByUserID(txCtx, userID)
-		if err != nil {
-			return err
-		}
-		if outgoingPendingsCount >= MaxTypeLimit {
-			return ErrMaxOutgoingPendingRequestsReached()
-		}
-
 		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)
 		if err != nil && !errs.IsNotFound(err) {
 			return err
@@ -103,18 +107,26 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 				if rel.IsActor(userID) {
 					return ErrAlreadyOutgoingBlock()
 				}
-				return nil
+				return ErrUsernameNotFound()
 			case TypePending:
 				if rel.IsActor(userID) {
 					return ErrAlreadyPending()
 				}
 
-				ok, err := s.canAddFriendWithPeer(txCtx, peerID)
+				userFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, userID)
 				if err != nil {
 					return err
 				}
-				if !ok {
-					return nil
+				if userFriendsCount >= MaxTypeLimit {
+					return ErrMaxFriendsReached()
+				}
+
+				peerFriends, err := s.repo.CountFriendsByUserID(txCtx, peerID)
+				if err != nil {
+					return err
+				}
+				if peerFriends >= MaxTypeLimit {
+					return ErrPeerMaxFriendsReached()
 				}
 
 				acceptedRel, created, err := s.acceptPendingRelation(txCtx, rel, chID, userID, peerID, now)
@@ -129,20 +141,12 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 			return nil
 		}
 
-		ok, err := s.canAddFriendWithPeer(txCtx, peerID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return nil
-		}
-
 		peerIncomingPendingsCount, err := s.repo.CountIncomingPendingsByUserID(txCtx, peerID)
 		if err != nil {
 			return err
 		}
 		if peerIncomingPendingsCount >= MaxTypeLimit {
-			return nil
+			return ErrPeerMaxIncomingFriendRequests()
 		}
 
 		pendingRel := NewPending(u1, u2, userID, now)
@@ -154,7 +158,7 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 	}
 
 	if savedRel == nil {
-		return nil, nil
+		return nil, ErrSendingFriendRequest()
 	}
 
 	switch savedRel.Type {
@@ -168,9 +172,18 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 				slog.String("peer_id", peerID.String()),
 				slog.Any("error", err),
 			)
-			return nil, nil
+			return &TransitionFriendsResult{PeerUser: peer}, nil
 		}
 
+		s.broadcastToUser(
+			ctx,
+			userID,
+			MessageFriendRequestSent,
+			newFriendRequestSentPayload(peer),
+			"failed to broadcast new pending relation",
+			userID,
+			peerID,
+		)
 		s.broadcastToUser(
 			ctx,
 			peerID,
@@ -180,7 +193,7 @@ func (s *Service) TransitionPending(ctx context.Context, userID uuid.UUID, peerI
 			userID,
 			peerID,
 		)
-		return nil, nil
+		return &TransitionFriendsResult{PeerUser: peer}, nil
 
 	case TypeFriends:
 		var ch *channel.Channel

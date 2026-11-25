@@ -26,27 +26,35 @@ func NewHandler(service *Service, bind *httpio.Bind) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
-	r.Post("/relations/requests/{id}", httpio.ToHTTPErr(h.sendFriendRequest))
+	r.Post("/relations/requests", httpio.ToHTTPErr(h.sendFriendRequest))
 	r.Post("/relations/requests/{id}/accept", httpio.ToHTTPErr(h.acceptFriendRequest))
 	r.Post("/relations/blocks/{id}", httpio.ToHTTPErr(h.blockUser))
 	r.Delete("/relations/{id}", httpio.ToHTTPErr(h.deleteRelation))
 }
 
+type sendFriendRequest struct {
+	Username string `json:"username" mod:"text" validate:"required,user_username"`
+}
+
 func (h *Handler) sendFriendRequest(w http.ResponseWriter, r *http.Request) error {
-	userID, peerID, err := h.bindPeerRequest(r)
+	claims, err := appctx.GetClaims(r.Context())
 	if err != nil {
 		return err
 	}
 
-	result, err := h.service.TransitionPending(r.Context(), userID, peerID)
+	var req sendFriendRequest
+	if err = h.bind.JSON(w, r, &req); err != nil {
+		return err
+	}
+
+	result, err := h.service.TransitionPending(r.Context(), claims.UserID, req.Username)
 	if err != nil {
 		return err
 	}
 
 	resp := newFriendAddedResponse(result)
 	if resp == nil {
-		httpio.RespondNoContent(w)
-		return nil
+		return ErrSendingFriendRequest()
 	}
 
 	httpio.RespondOK(w, r, resp)
@@ -122,10 +130,7 @@ type friendAddedResponse struct {
 }
 
 func newFriendAddedResponse(result *TransitionFriendsResult) *friendAddedResponse {
-	if result == nil {
-		return nil
-	}
-	if result.Channel == nil && result.Member == nil && result.PeerUser == nil {
+	if result == nil || result.PeerUser == nil {
 		return nil
 	}
 

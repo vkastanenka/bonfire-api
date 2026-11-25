@@ -4,6 +4,20 @@ import (
 	"bonfire-api/internal/pkg/errs"
 )
 
+func ErrSendingFriendRequest() *errs.Error {
+	return errs.Internal("Error sending friend request. Please try again later")
+}
+
+func ErrUsernameNotFound() *errs.Error {
+	return errs.InvalidArgument("Request failed. Please check that the username is correct.").
+		FieldViolation("username", "Request failed. Please check that the username is correct.", "USERNAME_INVALID")
+}
+
+func ErrUserDisabled() *errs.Error {
+	return errs.PermissionDenied("Cannot accept relation that is not pending.").
+		Reason("RELATION_NOT_PENDING")
+}
+
 func ErrIDGenerateFailed() *errs.Error {
 	return errs.Internal("Failed to generate ID.").
 		Reason("ID_GENERATE_FAILED")
@@ -11,7 +25,7 @@ func ErrIDGenerateFailed() *errs.Error {
 
 func ErrPeerIDInvalid() *errs.Error {
 	return errs.InvalidArgument("Invalid peer ID format.").
-		FieldViolation("id", "Invalid ID.", "INVALID_ID")
+		FieldViolation("id", "Invalid ID.", "ID_INVALID")
 }
 
 func ErrCannotRequestSelf() *errs.Error {
@@ -27,6 +41,16 @@ func ErrMaxOutgoingPendingRequestsReached() *errs.Error {
 func ErrMaxFriendsReached() *errs.Error {
 	return errs.ResourceExhausted("Maximum friends limit reached.").
 		Reason("RELATION_MAX_FRIENDS_REACHED")
+}
+
+func ErrPeerMaxFriendsReached() *errs.Error {
+	return errs.ResourceExhausted("This user has reached the maximum number of friends.").
+		Reason("RELATION_PEER_MAX_FRIENDS_REACHED")
+}
+
+func ErrPeerMaxIncomingFriendRequests() *errs.Error {
+	return errs.ResourceExhausted("This user has reached the maximum number of incoming friend requests.").
+		Reason("RELATION_PEER_MAX_INCOMING_FRIEND_REQUESTS_REACHED")
 }
 
 func ErrMaxBlocksReached() *errs.Error {

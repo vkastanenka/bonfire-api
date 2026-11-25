@@ -32,6 +32,7 @@ type MemberRepository interface {
 type UserRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (*user.User, error)
 	GetBatch(ctx context.Context, ids []uuid.UUID) ([]*user.User, error)
+	GetByUsername(ctx context.Context, username string) (*user.User, error)
 }
 
 type CachedUserRepository interface {

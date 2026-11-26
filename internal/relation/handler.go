@@ -52,7 +52,7 @@ func (h *Handler) sendFriendRequest(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 
-	resp := newFriendAddedResponse(result)
+	resp := newTransitionResponse(result)
 	if resp == nil {
 		return ErrSendingFriendRequest()
 	}
@@ -72,7 +72,12 @@ func (h *Handler) acceptFriendRequest(w http.ResponseWriter, r *http.Request) er
 		return err
 	}
 
-	httpio.RespondOK(w, r, newFriendAddedResponse(result))
+	resp := newTransitionResponse(result)
+	if resp == nil {
+		return ErrSendingFriendRequest()
+	}
+
+	httpio.RespondOK(w, r, resp)
 	return nil
 }
 
@@ -122,22 +127,22 @@ func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, e
 	return claims.UserID, path.ID, nil
 }
 
-type friendAddedResponse struct {
-	Channel      *channel.ChannelDTO `json:"channel"`
-	Membership   *channel.MemberDTO  `json:"membership"`
+type transitionResponse struct {
+	Channel      *channel.ChannelDTO `json:"channel,omitempty"`
+	Membership   *channel.MemberDTO  `json:"membership,omitempty"`
 	PeerUser     *user.DTO           `json:"peerUser"`
-	PeerPresence gateway.Presence    `json:"peerPresence"`
+	PeerPresence *gateway.Presence   `json:"peerPresence,omitempty"`
 }
 
-func newFriendAddedResponse(result *TransitionResult) *friendAddedResponse {
+func newTransitionResponse(result *TransitionResult) *transitionResponse {
 	if result == nil || result.PeerUser == nil {
 		return nil
 	}
 
-	return &friendAddedResponse{
+	return &transitionResponse{
 		Channel:      channel.NewDTO(result.Channel),
 		Membership:   channel.NewMemberDTO(result.Membership),
 		PeerUser:     user.NewDTO(result.PeerUser),
-		PeerPresence: *result.PeerPresence,
+		PeerPresence: result.PeerPresence,
 	}
 }

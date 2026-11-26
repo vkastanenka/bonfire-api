@@ -225,3 +225,7 @@ func sortIDPair(id1, id2 uuid.UUID) (uuid.UUID, uuid.UUID) {
 	}
 	return id2, id1
 }
+
+func countAtLimit(count int) bool {
+	return count >= MaxTypeLimit
+}

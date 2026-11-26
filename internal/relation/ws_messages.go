@@ -17,33 +17,33 @@ const (
 )
 
 type MessageFriendRequestSentPayload struct {
-	User *user.DTO `json:"user"`
+	PeerUser *user.DTO `json:"peerUser"`
 }
 
 func newFriendRequestSentPayload(u *user.User) MessageFriendRequestSentPayload {
 	return MessageFriendRequestSentPayload{
-		User: user.NewDTO(u),
+		PeerUser: user.NewDTO(u),
 	}
 }
 
 type MessageFriendAddedPayload struct {
-	User     *user.DTO           `json:"user"`
-	Presence gateway.Presence    `json:"presence"`
-	Channel  *channel.ChannelDTO `json:"channel,omitempty"`
-	Member   *channel.MemberDTO  `json:"member,omitempty"`
+	Channel      *channel.ChannelDTO `json:"channel"`
+	Membership   *channel.MemberDTO  `json:"membership"`
+	PeerUser     *user.DTO           `json:"peerUser"`
+	PeerPresence gateway.Presence    `json:"peerPresence"`
 }
 
 func newFriendAddedPayload(
+	ch *channel.Channel,
+	mem *channel.Member,
 	u *user.User,
 	presence gateway.Presence,
-	ch *channel.Channel,
-	member *channel.Member,
 ) MessageFriendAddedPayload {
 	return MessageFriendAddedPayload{
-		User:     user.NewDTO(u),
-		Presence: presence,
-		Channel:  channel.NewDTO(ch),
-		Member:   channel.NewMemberDTO(member),
+		Channel:      channel.NewDTO(ch),
+		Membership:   channel.NewMemberDTO(mem),
+		PeerUser:     user.NewDTO(u),
+		PeerPresence: presence,
 	}
 }
 

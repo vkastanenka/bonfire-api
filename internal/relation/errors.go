@@ -5,7 +5,11 @@ import (
 )
 
 func ErrSendingFriendRequest() *errs.Error {
-	return errs.Internal("Error sending friend request. Please try again later")
+	return errs.Internal("Error sending friend request. Please try again later.")
+}
+
+func ErrUnknownRelationFound() *errs.Error {
+	return errs.Internal("Error processing relation request, relation with unknown type found in db.")
 }
 
 func ErrUsernameNotFound() *errs.Error {

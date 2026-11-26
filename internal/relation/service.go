@@ -186,7 +186,7 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 		s.broadcastToUser(
 			ctx,
 			peerID,
-			MessageFriendRequestSent,
+			MessageFriendRequestReceived,
 			newFriendRequestSentPayload(actor),
 			"failed to broadcast new pending relation",
 			actorID,

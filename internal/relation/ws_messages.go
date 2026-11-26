@@ -9,20 +9,21 @@ import (
 )
 
 const (
-	MessageFriendRequestSent    = "relation.friend_request_sent"
-	MessageFriendRequestDeleted = "relation.friend_request_deleted"
-	MessageFriendAdded          = "relation.friend_added"
-	MessageFriendDeleted        = "relation.friend_deleted"
-	MessageUserBlocked          = "relation.user_blocked"
-	MessageBlockDeleted         = "relation.block_deleted"
+	MessageFriendRequestSent     = "relation.friend_request_sent"
+	MessageFriendRequestReceived = "relation.friend_request_received"
+	MessageFriendRequestDeleted  = "relation.friend_request_deleted"
+	MessageFriendAdded           = "relation.friend_added"
+	MessageFriendDeleted         = "relation.friend_deleted"
+	MessageUserBlocked           = "relation.user_blocked"
+	MessageBlockDeleted          = "relation.block_deleted"
 )
 
-type MessageFriendRequestSentPayload struct {
+type MessageFriendRequestPayload struct {
 	PeerUser *user.DTO `json:"peerUser"`
 }
 
-func newFriendRequestSentPayload(u *user.User) MessageFriendRequestSentPayload {
-	return MessageFriendRequestSentPayload{
+func newFriendRequestSentPayload(u *user.User) MessageFriendRequestPayload {
+	return MessageFriendRequestPayload{
 		PeerUser: user.NewDTO(u),
 	}
 }

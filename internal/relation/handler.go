@@ -104,6 +104,10 @@ func (h *Handler) deleteRelation(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+type peerIDPath struct {
+	ID uuid.UUID `path:"id" validate:"required"`
+}
+
 func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, err error) {
 	claims, err := appctx.GetClaims(r.Context())
 	if err != nil {
@@ -118,26 +122,22 @@ func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, e
 	return claims.UserID, path.ID, nil
 }
 
-type peerIDPath struct {
-	ID uuid.UUID `path:"id" validate:"required"`
-}
-
 type friendAddedResponse struct {
 	Channel      *channel.ChannelDTO `json:"channel"`
-	Member       *channel.MemberDTO  `json:"member"`
+	Membership   *channel.MemberDTO  `json:"membership"`
 	PeerUser     *user.DTO           `json:"peerUser"`
 	PeerPresence gateway.Presence    `json:"peerPresence"`
 }
 
-func newFriendAddedResponse(result *TransitionFriendsResult) *friendAddedResponse {
+func newFriendAddedResponse(result *TransitionResult) *friendAddedResponse {
 	if result == nil || result.PeerUser == nil {
 		return nil
 	}
 
 	return &friendAddedResponse{
 		Channel:      channel.NewDTO(result.Channel),
-		Member:       channel.NewMemberDTO(result.Member),
+		Membership:   channel.NewMemberDTO(result.Membership),
 		PeerUser:     user.NewDTO(result.PeerUser),
-		PeerPresence: result.PeerPresence,
+		PeerPresence: *result.PeerPresence,
 	}
 }

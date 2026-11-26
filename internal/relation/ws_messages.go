@@ -14,6 +14,7 @@ const (
 	MessageFriendAdded          = "relation.friend_added"
 	MessageFriendDeleted        = "relation.friend_deleted"
 	MessageUserBlocked          = "relation.user_blocked"
+	MessageBlockDeleted         = "relation.block_deleted"
 )
 
 type MessageFriendRequestSentPayload struct {
@@ -47,12 +48,12 @@ func newFriendAddedPayload(
 	}
 }
 
-type MessageUserIDPayload struct {
-	UserID uuid.UUID `json:"user_id"`
+type MessagePeerIDPayload struct {
+	PeerID uuid.UUID `json:"peerId"`
 }
 
-func newUserIDPayload(userID uuid.UUID) MessageUserIDPayload {
-	return MessageUserIDPayload{
-		UserID: userID,
+func newPeerIDPayload(peerID uuid.UUID) MessagePeerIDPayload {
+	return MessagePeerIDPayload{
+		PeerID: peerID,
 	}
 }

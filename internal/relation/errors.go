@@ -12,6 +12,10 @@ func ErrUnknownRelationFound() *errs.Error {
 	return errs.Internal("Error processing relation request, relation with unknown type found in db.")
 }
 
+func ErrUserNotFound() *errs.Error {
+	return errs.NotFound("Unable to find user with the provided ID.")
+}
+
 func ErrUsernameNotFound() *errs.Error {
 	return errs.InvalidArgument("Request failed. Please check that the username is correct.").
 		FieldViolation("username", "Request failed. Please check that the username is correct.", "USERNAME_INVALID")

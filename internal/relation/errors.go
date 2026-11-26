@@ -95,3 +95,8 @@ func ErrAlreadyPending() *errs.Error {
 	return errs.AlreadyExists("Friend request already pending.").
 		Reason("RELATION_ALREADY_PENDING")
 }
+
+func ErrNotActive() *errs.Error {
+	return errs.PermissionDenied("Cannot accept friend request that is not active.").
+		Reason("RELATION_NOT_ACTIVE")
+}

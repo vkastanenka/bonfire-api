@@ -199,25 +199,26 @@ CREATE TABLE relations(
     created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     type smallint NOT NULL CONSTRAINT type_valid CHECK (type IN (1, 2, 3)),
+    is_active boolean NOT NULL DEFAULT TRUE,
     CONSTRAINT relations_pkey PRIMARY KEY (user1_id, user2_id),
     CONSTRAINT user_order CHECK (user1_id < user2_id),
     CONSTRAINT actor_must_be_participant CHECK (actor_id IN (user1_id, user2_id)),
-    CONSTRAINT channel_required_for_friends CHECK (type != 2 OR channel_id IS NOT NULL)
+    CONSTRAINT channel_required_for_friends CHECK ((type = 2 AND channel_id IS NOT NULL) OR (type IN (1, 3)))
 );
 
-CREATE INDEX idx_relations_user1_type_created ON relations(user1_id, type, created_at DESC);
-
-CREATE INDEX idx_relations_user2_type_created ON relations(user2_id, type, created_at DESC);
-
-CREATE UNIQUE INDEX idx_relations_channel_id ON relations(channel_id)
+CREATE INDEX idx_relations_user1_type_created ON relations(user1_id, type, created_at DESC)
 WHERE
-    channel_id IS NOT NULL;
+    is_active = TRUE;
+
+CREATE INDEX idx_relations_user2_type_created ON relations(user2_id, type, created_at DESC)
+WHERE
+    is_active = TRUE;
 
 CREATE INDEX idx_relations_user1_blocks ON relations(user1_id, user2_id)
 WHERE
-    type = 3;
+    is_active = TRUE AND type = 3;
 
 CREATE INDEX idx_relations_user2_blocks ON relations(user2_id, user1_id)
 WHERE
-    type = 3;
+    is_active = TRUE AND type = 3;
 

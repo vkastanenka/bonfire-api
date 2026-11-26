@@ -20,6 +20,7 @@ type Relation struct {
 	ActorID   uuid.UUID
 	ChannelID *uuid.UUID
 	Type      Type
+	IsActive  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -38,6 +39,7 @@ func New(
 		ActorID:   actorID,
 		ChannelID: channelID,
 		Type:      relType,
+		IsActive:  true,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -98,6 +100,7 @@ func Reconstitute(
 	actorID uuid.UUID,
 	channelID *uuid.UUID,
 	relType Type,
+	isActive bool,
 	createdAt,
 	updatedAt time.Time,
 ) *Relation {
@@ -107,14 +110,15 @@ func Reconstitute(
 		ActorID:   actorID,
 		ChannelID: channelID,
 		Type:      relType,
+		IsActive:  isActive,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
 	}
 }
 
-func (r *Relation) IsPending() bool { return r.Type.IsPending() }
-func (r *Relation) IsFriends() bool { return r.Type.IsFriends() }
-func (r *Relation) IsBlocked() bool { return r.Type.IsBlocked() }
+func (r *Relation) IsPending() bool { return r.IsActive && r.Type.IsPending() }
+func (r *Relation) IsFriends() bool { return r.IsActive && r.Type.IsFriends() }
+func (r *Relation) IsBlocked() bool { return r.IsActive && r.Type.IsBlocked() }
 
 func (r *Relation) IsActor(userID uuid.UUID) bool {
 	return r.ActorID == userID
@@ -147,16 +151,37 @@ func (r *Relation) PeerID(userID uuid.UUID) uuid.UUID {
 	return r.User1ID
 }
 
+func (r *Relation) Request(actorID uuid.UUID, now time.Time) {
+	r.Type = TypePending
+	r.ActorID = actorID
+	r.IsActive = true
+	r.touch(now)
+}
+
 func (r *Relation) Accept(actorID uuid.UUID, channelID uuid.UUID, now time.Time) {
 	r.Type = TypeFriends
 	r.ActorID = actorID
 	r.ChannelID = &channelID
+	r.IsActive = true
 	r.touch(now)
 }
 
 func (r *Relation) Block(actorID uuid.UUID, now time.Time) {
 	r.Type = TypeBlocked
 	r.ActorID = actorID
+	r.IsActive = true
+	r.touch(now)
+}
+
+func (r *Relation) Enable(actorID uuid.UUID, now time.Time) {
+	r.ActorID = actorID
+	r.IsActive = true
+	r.touch(now)
+}
+
+func (r *Relation) Disable(actorID uuid.UUID, now time.Time) {
+	r.ActorID = actorID
+	r.IsActive = false
 	r.touch(now)
 }
 

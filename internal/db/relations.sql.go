@@ -18,6 +18,7 @@ FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type = $2::smallint
 AND actor_id != $1::uuid
 `
@@ -41,6 +42,7 @@ FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type = $2::smallint
 AND actor_id = $1::uuid
 `
@@ -64,6 +66,7 @@ FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type = $2::smallint
 `
 
@@ -79,28 +82,40 @@ func (q *Queries) RelationCountTypeByUserID(ctx context.Context, arg RelationCou
 	return count, err
 }
 
-const relationDeleteByUserID = `-- name: RelationDeleteByUserID :exec
-DELETE FROM relations
-WHERE user1_id = LEAST($1::uuid, $2::uuid)
-    AND user2_id = GREATEST($1::uuid, $2::uuid)
+const relationDeactivateByUserID = `-- name: RelationDeactivateByUserID :exec
+UPDATE
+    relations
+SET
+    is_active = FALSE,
+    updated_at = $1::timestamptz
+WHERE
+    user1_id = LEAST($2::uuid, $3::uuid)
+    AND user2_id = GREATEST($2::uuid, $3::uuid)
+    AND is_active = TRUE
     AND (type != 3
-        OR actor_id = $3::uuid)
+        OR actor_id = $4::uuid)
 `
 
-type RelationDeleteByUserIDParams struct {
-	User1ID pgtype.UUID `json:"user1_id"`
-	User2ID pgtype.UUID `json:"user2_id"`
-	ActorID pgtype.UUID `json:"actor_id"`
+type RelationDeactivateByUserIDParams struct {
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	User1ID   pgtype.UUID        `json:"user1_id"`
+	User2ID   pgtype.UUID        `json:"user2_id"`
+	ActorID   pgtype.UUID        `json:"actor_id"`
 }
 
-func (q *Queries) RelationDeleteByUserID(ctx context.Context, arg RelationDeleteByUserIDParams) error {
-	_, err := q.db.Exec(ctx, relationDeleteByUserID, arg.User1ID, arg.User2ID, arg.ActorID)
+func (q *Queries) RelationDeactivateByUserID(ctx context.Context, arg RelationDeactivateByUserIDParams) error {
+	_, err := q.db.Exec(ctx, relationDeactivateByUserID,
+		arg.UpdatedAt,
+		arg.User1ID,
+		arg.User2ID,
+		arg.ActorID,
+	)
 	return err
 }
 
 const relationGet = `-- name: RelationGet :one
 SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 FROM
     relations
 WHERE
@@ -124,37 +139,14 @@ func (q *Queries) RelationGet(ctx context.Context, arg RelationGetParams) (Relat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Type,
-	)
-	return i, err
-}
-
-const relationGetByChannelID = `-- name: RelationGetByChannelID :one
-SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
-FROM
-    relations
-WHERE
-    channel_id = $1::uuid
-`
-
-func (q *Queries) RelationGetByChannelID(ctx context.Context, channelID pgtype.UUID) (Relation, error) {
-	row := q.db.QueryRow(ctx, relationGetByChannelID, channelID)
-	var i Relation
-	err := row.Scan(
-		&i.User1ID,
-		&i.User2ID,
-		&i.ActorID,
-		&i.ChannelID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Type,
+		&i.IsActive,
 	)
 	return i, err
 }
 
 const relationGetForUpdate = `-- name: RelationGetForUpdate :one
 SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 FROM
     relations
 WHERE
@@ -179,6 +171,7 @@ func (q *Queries) RelationGetForUpdate(ctx context.Context, arg RelationGetForUp
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Type,
+		&i.IsActive,
 	)
 	return i, err
 }
@@ -194,6 +187,7 @@ SELECT
                 AND user2_id = ANY ($2::uuid[]))
             OR (user2_id = $1::uuid
                 AND user1_id = ANY ($2::uuid[])))
+        AND is_active = TRUE
         AND type = 3
         AND actor_id != $1::uuid)
 `
@@ -212,11 +206,12 @@ func (q *Queries) RelationHasIncomingBlock(ctx context.Context, arg RelationHasI
 
 const relationListIncomingTypeByUserID = `-- name: RelationListIncomingTypeByUserID :many
 SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type = $2::smallint
 AND actor_id != $1::uuid
 ORDER BY
@@ -247,6 +242,7 @@ func (q *Queries) RelationListIncomingTypeByUserID(ctx context.Context, arg Rela
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Type,
+			&i.IsActive,
 		); err != nil {
 			return nil, err
 		}
@@ -260,11 +256,12 @@ func (q *Queries) RelationListIncomingTypeByUserID(ctx context.Context, arg Rela
 
 const relationListOutgoingTypeByUserID = `-- name: RelationListOutgoingTypeByUserID :many
 SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type = $2::smallint
 AND actor_id = $1::uuid
 ORDER BY
@@ -295,6 +292,7 @@ func (q *Queries) RelationListOutgoingTypeByUserID(ctx context.Context, arg Rela
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Type,
+			&i.IsActive,
 		); err != nil {
 			return nil, err
 		}
@@ -308,11 +306,12 @@ func (q *Queries) RelationListOutgoingTypeByUserID(ctx context.Context, arg Rela
 
 const relationListPendingsAndFriendsByUserID = `-- name: RelationListPendingsAndFriendsByUserID :many
 SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type IN (1, 2)
 ORDER BY
     created_at DESC
@@ -341,6 +340,7 @@ func (q *Queries) RelationListPendingsAndFriendsByUserID(ctx context.Context, ar
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Type,
+			&i.IsActive,
 		); err != nil {
 			return nil, err
 		}
@@ -354,11 +354,12 @@ func (q *Queries) RelationListPendingsAndFriendsByUserID(ctx context.Context, ar
 
 const relationListTypeByUserID = `-- name: RelationListTypeByUserID :many
 SELECT
-    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+    relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 FROM
     relations
 WHERE (user1_id = $1::uuid
     OR user2_id = $1::uuid)
+AND is_active = TRUE
 AND type = $2::smallint
 ORDER BY
     created_at DESC
@@ -388,6 +389,7 @@ func (q *Queries) RelationListTypeByUserID(ctx context.Context, arg RelationList
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Type,
+			&i.IsActive,
 		); err != nil {
 			return nil, err
 		}
@@ -400,20 +402,17 @@ func (q *Queries) RelationListTypeByUserID(ctx context.Context, arg RelationList
 }
 
 const relationSave = `-- name: RelationSave :one
-INSERT INTO relations(user1_id, user2_id, actor_id, channel_id, created_at, updated_at, type)
-    VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid), $3::uuid, $4::uuid, $5::timestamptz, $6::timestamptz, $7::smallint)
+INSERT INTO relations(user1_id, user2_id, actor_id, channel_id, created_at, updated_at, type, is_active)
+    VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid), $3::uuid, $4::uuid, $5::timestamptz, $6::timestamptz, $7::smallint, $8::boolean)
 ON CONFLICT (user1_id, user2_id)
     DO UPDATE SET
         actor_id = EXCLUDED.actor_id,
-        channel_id = CASE WHEN EXCLUDED.type = 2 THEN
-            COALESCE(EXCLUDED.channel_id, relations.channel_id)
-        ELSE
-            NULL
-        END,
+        channel_id = COALESCE(EXCLUDED.channel_id, relations.channel_id),
         updated_at = EXCLUDED.updated_at,
-        type = EXCLUDED.type
+        type = EXCLUDED.type,
+        is_active = EXCLUDED.is_active
     RETURNING
-        relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type
+        relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active
 `
 
 type RelationSaveParams struct {
@@ -424,6 +423,7 @@ type RelationSaveParams struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	Type      int16              `json:"type"`
+	IsActive  bool               `json:"is_active"`
 }
 
 func (q *Queries) RelationSave(ctx context.Context, arg RelationSaveParams) (Relation, error) {
@@ -435,6 +435,7 @@ func (q *Queries) RelationSave(ctx context.Context, arg RelationSaveParams) (Rel
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.Type,
+		arg.IsActive,
 	)
 	var i Relation
 	err := row.Scan(
@@ -445,6 +446,7 @@ func (q *Queries) RelationSave(ctx context.Context, arg RelationSaveParams) (Rel
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Type,
+		&i.IsActive,
 	)
 	return i, err
 }

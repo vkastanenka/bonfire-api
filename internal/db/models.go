@@ -93,6 +93,7 @@ type Relation struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	Type      int16              `json:"type"`
+	IsActive  bool               `json:"is_active"`
 }
 
 type Session struct {

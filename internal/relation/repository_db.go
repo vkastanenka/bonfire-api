@@ -3,6 +3,7 @@ package relation
 import (
 	"bonfire-api/internal/db"
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -26,6 +27,7 @@ func (r *Repository) Save(ctx context.Context, rel *Relation) (*Relation, error)
 		ActorID:   db.ToUUID(rel.ActorID),
 		ChannelID: db.ToUUIDPtr(rel.ChannelID),
 		Type:      int16(rel.Type),
+		IsActive:  rel.IsActive,
 		CreatedAt: db.ToTimestamptz(rel.CreatedAt),
 		UpdatedAt: db.ToTimestamptz(rel.UpdatedAt),
 	})
@@ -53,15 +55,6 @@ func (r *Repository) GetForUpdate(ctx context.Context, user1ID, user2ID uuid.UUI
 		User1ID: db.ToUUID(user1ID),
 		User2ID: db.ToUUID(user2ID),
 	})
-	if err != nil {
-		return nil, db.NewError(err, db.ResourceRelation)
-	}
-
-	return relationFromRow(row), nil
-}
-
-func (r *Repository) GetByChannelID(ctx context.Context, channelID uuid.UUID) (*Relation, error) {
-	row, err := r.store.RelationGetByChannelID(ctx, db.ToUUID(channelID))
 	if err != nil {
 		return nil, db.NewError(err, db.ResourceRelation)
 	}
@@ -278,11 +271,18 @@ func (r *Repository) HasIncomingBlock(ctx context.Context, actorID uuid.UUID, pe
 	return hasBlock, nil
 }
 
-func (r *Repository) DeleteByUserID(ctx context.Context, user1ID, user2ID, actorID uuid.UUID) error {
-	err := r.store.RelationDeleteByUserID(ctx, db.RelationDeleteByUserIDParams{
-		User1ID: db.ToUUID(user1ID),
-		User2ID: db.ToUUID(user2ID),
-		ActorID: db.ToUUID(actorID),
+func (r *Repository) DeactivateByUserID(
+	ctx context.Context,
+	user1ID,
+	user2ID,
+	actorID uuid.UUID,
+	updatedAt time.Time,
+) error {
+	err := r.store.RelationDeactivateByUserID(ctx, db.RelationDeactivateByUserIDParams{
+		User1ID:   db.ToUUID(user1ID),
+		User2ID:   db.ToUUID(user2ID),
+		ActorID:   db.ToUUID(actorID),
+		UpdatedAt: db.ToTimestamptz(updatedAt),
 	})
 	if err != nil {
 		return db.NewError(err, db.ResourceRelation)
@@ -298,6 +298,7 @@ func relationFromRow(row db.Relation) *Relation {
 		db.FromUUID(row.ActorID),
 		db.FromUUIDPtr(row.ChannelID),
 		Type(int(row.Type)),
+		row.IsActive,
 		db.FromTimestamptz(row.CreatedAt),
 		db.FromTimestamptz(row.UpdatedAt),
 	)

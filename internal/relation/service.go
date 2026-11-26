@@ -104,36 +104,63 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 		if rel != nil {
 			switch rel.Type {
 			case TypeFriends:
-				return ErrAlreadyFriends()
+				if rel.IsActive {
+					return ErrAlreadyFriends()
+				}
+
+				rel.Request(actorID, now)
+				savedRel, err = s.repo.Save(txCtx, rel)
+				return err
 			case TypeBlocked:
-				if rel.IsActor(actorID) {
-					return ErrAlreadyOutgoingBlock()
+				if rel.IsActive {
+					if rel.IsActor(actorID) {
+						return ErrAlreadyOutgoingBlock()
+					}
+					return ErrUsernameNotFound()
 				}
-				return ErrUsernameNotFound()
+
+				rel.Request(actorID, now)
+				savedRel, err = s.repo.Save(txCtx, rel)
+				return err
 			case TypePending:
-				if rel.IsActor(actorID) {
-					return ErrAlreadyPending()
+				if rel.IsActive {
+					if rel.IsActor(actorID) {
+						return ErrAlreadyPending()
+					}
+
+					actorFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, actorID)
+					if err != nil {
+						return err
+					}
+					if countAtLimit(actorFriendsCount) {
+						return ErrMaxFriendsReached()
+					}
+
+					peerFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, peerID)
+					if err != nil {
+						return err
+					}
+					if countAtLimit(peerFriendsCount) {
+						return ErrPeerMaxFriendsReached()
+					}
+
+					savedRel, newCh, actorMem, peerMem, err = s.acceptPendingRelation(txCtx, rel, chID, actorID, peerID, now)
+					return err
 				}
 
-				actorFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, actorID)
+				peerIncomingPendingsCount, err := s.repo.CountIncomingPendingsByUserID(txCtx, peerID)
 				if err != nil {
 					return err
 				}
-				if countAtLimit(actorFriendsCount) {
-					return ErrMaxFriendsReached()
+				if countAtLimit(peerIncomingPendingsCount) {
+					return ErrPeerMaxIncomingFriendRequests()
 				}
 
-				peerFriendsCount, err := s.repo.CountFriendsByUserID(txCtx, peerID)
-				if err != nil {
-					return err
-				}
-				if countAtLimit(peerFriendsCount) {
-					return ErrPeerMaxFriendsReached()
-				}
-
-				savedRel, newCh, actorMem, peerMem, err = s.acceptPendingRelation(txCtx, rel, chID, actorID, peerID, now)
+				rel.Enable(actorID, now)
+				savedRel, err = s.repo.Save(txCtx, rel)
 				return err
 			}
+
 			return ErrUnknownRelationFound()
 		}
 
@@ -247,6 +274,10 @@ func (s *Service) TransitionFriends(ctx context.Context, actorID, peerID uuid.UU
 			return err
 		}
 
+		if !rel.IsActive {
+			return ErrNotActive()
+		}
+
 		if !rel.IsPending() {
 			return ErrNotPending()
 		}
@@ -317,15 +348,18 @@ func (s *Service) TransitionBlocked(ctx context.Context, actorID, peerID uuid.UU
 		}
 
 		if rel != nil {
-			if rel.Type.IsBlocked() {
-				if rel.IsActor(actorID) {
-					return ErrAlreadyOutgoingBlock()
+			if rel.IsActive {
+				if rel.Type.IsBlocked() {
+					if rel.IsActor(actorID) {
+						return ErrAlreadyOutgoingBlock()
+					}
+					return ErrUserNotFound()
 				}
-				return ErrUserNotFound()
+
+				prevType = rel.Type
+				prevActorID = rel.ActorID
 			}
 
-			prevType = rel.Type
-			prevActorID = rel.ActorID
 			rel.Block(actorID, now)
 		} else {
 			rel = NewBlocked(u1, u2, actorID, now)
@@ -386,13 +420,15 @@ func (s *Service) TransitionBlocked(ctx context.Context, actorID, peerID uuid.UU
 	return nil
 }
 
-func (s *Service) DeleteByUserID(ctx context.Context, actorID, peerID uuid.UUID) error {
+func (s *Service) DisableByUserID(ctx context.Context, actorID, peerID uuid.UUID) error {
 	if actorID == peerID {
 		return ErrCannotRequestSelf()
 	}
 
 	u1, u2 := sortIDPair(actorID, peerID)
-	var deletedRel *Relation
+	var disabledRel *Relation
+
+	now := time.Now()
 
 	err := s.tx.ExecTx(ctx, func(txCtx context.Context) error {
 		rel, err := s.repo.GetForUpdate(txCtx, u1, u2)
@@ -400,24 +436,28 @@ func (s *Service) DeleteByUserID(ctx context.Context, actorID, peerID uuid.UUID)
 			return err
 		}
 
+		if !rel.IsActive {
+			return ErrNotActive()
+		}
+
 		if rel.IsBlockedByPeer(actorID) {
 			return ErrUserNotFound()
 		}
 
-		if err := s.repo.DeleteByUserID(txCtx, u1, u2, actorID); err != nil {
+		if err := s.repo.DeactivateByUserID(txCtx, u1, u2, actorID, now); err != nil {
 			return err
 		}
 
-		deletedRel = rel
+		disabledRel = rel
 		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	switch deletedRel.Type {
+	switch disabledRel.Type {
 	case TypePending:
-		senderID, recipientID := resolvePendingPair(deletedRel.ActorID, actorID, peerID)
+		senderID, recipientID := resolvePendingPair(disabledRel.ActorID, actorID, peerID)
 		s.invalidateCache(ctx, "delete_pending", senderID, recipientID, s.cache.DeletePendingPair)
 		s.broadcastToUser(
 			ctx,
@@ -483,17 +523,53 @@ func (s *Service) acceptPendingRelation(
 		return nil, nil, nil, nil, ErrSendingFriendRequest()
 	}
 
-	var err error
-	ch := channel.NewDirect(chID, now)
-	actorMem := channel.NewCreatorMember(chID, actorID, now)
-	peerMem := channel.NewPeerMember(chID, peerID, now)
+	var (
+		ch       *channel.Channel
+		actorMem *channel.Member
+		peerMem  *channel.Member
+		err      error
+	)
 
-	if ch, err = s.channelRepo.Create(ctx, ch); err != nil {
-		return nil, nil, nil, nil, err
+	if rel.ChannelID != nil {
+		ch, err = s.channelRepo.Get(ctx, *rel.ChannelID)
+		if err != nil && !errs.IsNotFound(err) {
+			return nil, nil, nil, nil, err
+		}
 	}
 
-	if _, err := s.memberRepo.CreateBatch(ctx, []*channel.Member{actorMem, peerMem}); err != nil {
-		return nil, nil, nil, nil, err
+	if ch != nil {
+		if _, err := s.memberRepo.IncrementPeersMentionCountByChannelID(
+			ctx,
+			ch.ID,
+			actorID,
+			1,
+			now,
+		); err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		actorMem, err = s.memberRepo.Get(ctx, ch.ID, actorID)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		peerMem, err = s.memberRepo.Get(ctx, ch.ID, peerID)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+	} else {
+		ch = channel.NewDirect(chID, now)
+		actorMem = channel.NewCreatorMember(chID, actorID, now)
+		peerMem = channel.NewPeerMember(chID, peerID, now)
+
+		ch, err = s.channelRepo.Create(ctx, ch)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		if _, err := s.memberRepo.CreateBatch(ctx, []*channel.Member{actorMem, peerMem}); err != nil {
+			return nil, nil, nil, nil, err
+		}
 	}
 
 	rel.Accept(actorID, ch.ID, now)

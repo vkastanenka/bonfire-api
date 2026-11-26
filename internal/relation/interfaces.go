@@ -5,6 +5,7 @@ import (
 	"bonfire-api/internal/gateway"
 	"bonfire-api/internal/user"
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -23,10 +24,19 @@ type GatewayCache interface {
 
 type ChannelRepository interface {
 	Create(ctx context.Context, ch *channel.Channel) (*channel.Channel, error)
+	Get(ctx context.Context, id uuid.UUID) (*channel.Channel, error)
 }
 
 type MemberRepository interface {
 	CreateBatch(ctx context.Context, members []*channel.Member) ([]*channel.Member, error)
+	Get(ctx context.Context, channelID, userID uuid.UUID) (*channel.Member, error)
+	GetBatchByChannelID(ctx context.Context, channelID uuid.UUID) ([]*channel.Member, error)
+	IncrementPeersMentionCountByChannelID(
+		ctx context.Context,
+		channelID, actorID uuid.UUID,
+		incrementAmount int,
+		updatedAt time.Time,
+	) ([]*channel.Member, error)
 }
 
 type UserRepository interface {

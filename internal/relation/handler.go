@@ -29,7 +29,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Post("/relations/requests", httpio.ToHTTPErr(h.sendFriendRequest))
 	r.Post("/relations/requests/{id}/accept", httpio.ToHTTPErr(h.acceptFriendRequest))
 	r.Post("/relations/blocks/{id}", httpio.ToHTTPErr(h.blockUser))
-	r.Delete("/relations/{id}", httpio.ToHTTPErr(h.deleteRelation))
+	r.Delete("/relations/{id}", httpio.ToHTTPErr(h.disableRelation))
 }
 
 type sendFriendRequest struct {
@@ -95,13 +95,13 @@ func (h *Handler) blockUser(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (h *Handler) deleteRelation(w http.ResponseWriter, r *http.Request) error {
+func (h *Handler) disableRelation(w http.ResponseWriter, r *http.Request) error {
 	userID, peerID, err := h.bindPeerRequest(r)
 	if err != nil {
 		return err
 	}
 
-	if err := h.service.DeleteByUserID(r.Context(), userID, peerID); err != nil {
+	if err := h.service.DisableByUserID(r.Context(), userID, peerID); err != nil {
 		return err
 	}
 

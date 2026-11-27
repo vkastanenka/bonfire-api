@@ -65,6 +65,7 @@ type Querier interface {
 	RelationCountOutgoingTypeByUserID(ctx context.Context, arg RelationCountOutgoingTypeByUserIDParams) (int64, error)
 	RelationCountTypeByUserID(ctx context.Context, arg RelationCountTypeByUserIDParams) (int64, error)
 	RelationDeactivateByUserID(ctx context.Context, arg RelationDeactivateByUserIDParams) error
+	RelationDeleteByUserID(ctx context.Context, arg RelationDeleteByUserIDParams) error
 	RelationGet(ctx context.Context, arg RelationGetParams) (Relation, error)
 	RelationGetForUpdate(ctx context.Context, arg RelationGetForUpdateParams) (Relation, error)
 	RelationHasIncomingBlock(ctx context.Context, arg RelationHasIncomingBlockParams) (bool, error)

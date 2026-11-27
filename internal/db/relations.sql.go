@@ -113,6 +113,27 @@ func (q *Queries) RelationDeactivateByUserID(ctx context.Context, arg RelationDe
 	return err
 }
 
+const relationDeleteByUserID = `-- name: RelationDeleteByUserID :exec
+DELETE FROM relations
+WHERE user1_id = LEAST($1::uuid, $2::uuid)
+    AND user2_id = GREATEST($1::uuid, $2::uuid)
+    AND channel_id IS NULL
+    AND is_active = TRUE
+    AND (type != 3
+        OR actor_id = $3::uuid)
+`
+
+type RelationDeleteByUserIDParams struct {
+	User1ID pgtype.UUID `json:"user1_id"`
+	User2ID pgtype.UUID `json:"user2_id"`
+	ActorID pgtype.UUID `json:"actor_id"`
+}
+
+func (q *Queries) RelationDeleteByUserID(ctx context.Context, arg RelationDeleteByUserIDParams) error {
+	_, err := q.db.Exec(ctx, relationDeleteByUserID, arg.User1ID, arg.User2ID, arg.ActorID)
+	return err
+}
+
 const relationGet = `-- name: RelationGet :one
 SELECT
     relations.user1_id, relations.user2_id, relations.actor_id, relations.channel_id, relations.created_at, relations.updated_at, relations.type, relations.is_active

@@ -144,3 +144,12 @@ WHERE
     AND (type != 3
         OR actor_id = @actor_id::uuid);
 
+-- name: RelationDeleteByUserID :exec
+DELETE FROM relations
+WHERE user1_id = LEAST(@user1_id::uuid, @user2_id::uuid)
+    AND user2_id = GREATEST(@user1_id::uuid, @user2_id::uuid)
+    AND channel_id IS NULL
+    AND is_active = TRUE
+    AND (type != 3
+        OR actor_id = @actor_id::uuid);
+

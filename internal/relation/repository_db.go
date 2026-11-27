@@ -291,6 +291,24 @@ func (r *Repository) DeactivateByUserID(
 	return nil
 }
 
+func (r *Repository) DeleteByUserID(
+	ctx context.Context,
+	user1ID,
+	user2ID,
+	actorID uuid.UUID,
+) error {
+	err := r.store.RelationDeleteByUserID(ctx, db.RelationDeleteByUserIDParams{
+		User1ID: db.ToUUID(user1ID),
+		User2ID: db.ToUUID(user2ID),
+		ActorID: db.ToUUID(actorID),
+	})
+	if err != nil {
+		return db.NewError(err, db.ResourceRelation)
+	}
+
+	return nil
+}
+
 func relationFromRow(row db.Relation) *Relation {
 	return Reconstitute(
 		db.FromUUID(row.User1ID),

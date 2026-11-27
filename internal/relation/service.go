@@ -63,14 +63,6 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 		return nil, ErrIDGenerateFailed()
 	}
 
-	outgoingPendingsCount, err := s.repo.CountOutgoingPendingsByUserID(ctx, actorID)
-	if err != nil {
-		return nil, err
-	}
-	if countAtLimit(outgoingPendingsCount) {
-		return nil, ErrMaxOutgoingPendingRequestsReached()
-	}
-
 	peer, err := s.userRepo.GetByUsername(ctx, username)
 	if err != nil {
 		if errs.IsNotFound(err) {
@@ -92,6 +84,7 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 	var newCh *channel.Channel
 	var actorMem *channel.Member
 	var peerMem *channel.Member
+	prevActorID := actorID
 
 	now := time.Now()
 
@@ -102,6 +95,12 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 		}
 
 		if rel != nil {
+			if !rel.IsActive {
+				if err := s.checkPendingLimits(txCtx, actorID, peerID); err != nil {
+					return err
+				}
+			}
+
 			switch rel.Type {
 			case TypeFriends:
 				if rel.IsActive {
@@ -144,32 +143,19 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 						return ErrPeerMaxFriendsReached()
 					}
 
+					prevActorID = rel.ActorID
 					savedRel, newCh, actorMem, peerMem, err = s.acceptPendingRelation(txCtx, rel, chID, actorID, peerID, now)
 					return err
-				}
-
-				peerIncomingPendingsCount, err := s.repo.CountIncomingPendingsByUserID(txCtx, peerID)
-				if err != nil {
-					return err
-				}
-				if countAtLimit(peerIncomingPendingsCount) {
-					return ErrPeerMaxIncomingFriendRequests()
 				}
 
 				rel.Enable(actorID, now)
 				savedRel, err = s.repo.Save(txCtx, rel)
 				return err
 			}
-
-			return ErrUnknownRelationFound()
 		}
 
-		peerIncomingPendingsCount, err := s.repo.CountIncomingPendingsByUserID(txCtx, peerID)
-		if err != nil {
+		if err := s.checkPendingLimits(txCtx, actorID, peerID); err != nil {
 			return err
-		}
-		if countAtLimit(peerIncomingPendingsCount) {
-			return ErrPeerMaxIncomingFriendRequests()
 		}
 
 		savedRel, err = s.repo.Save(txCtx, NewPending(u1, u2, actorID, now))
@@ -190,7 +176,7 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 	result := &TransitionResult{PeerUser: peer}
 
 	if savedRel.IsFriends() {
-		peerPresence := s.onFriendAdded(ctx, actor, peer, newCh, actorMem, peerMem)
+		peerPresence := s.onFriendAdded(ctx, actorID, prevActorID, actor, peer, newCh, actorMem, peerMem)
 		result.Channel = newCh
 		result.Membership = actorMem
 		result.PeerPresence = &peerPresence
@@ -222,6 +208,26 @@ func (s *Service) TransitionPending(ctx context.Context, actorID uuid.UUID, user
 	}
 
 	return result, nil
+}
+
+func (s *Service) checkPendingLimits(ctx context.Context, actorID, peerID uuid.UUID) error {
+	outgoingPendingsCount, err := s.repo.CountOutgoingPendingsByUserID(ctx, actorID)
+	if err != nil {
+		return err
+	}
+	if countAtLimit(outgoingPendingsCount) {
+		return ErrMaxOutgoingPendingRequestsReached()
+	}
+
+	peerIncomingPendingsCount, err := s.repo.CountIncomingPendingsByUserID(ctx, peerID)
+	if err != nil {
+		return err
+	}
+	if countAtLimit(peerIncomingPendingsCount) {
+		return ErrPeerMaxIncomingFriendRequests()
+	}
+
+	return nil
 }
 
 func (s *Service) TransitionFriends(ctx context.Context, actorID, peerID uuid.UUID) (*TransitionResult, error) {
@@ -301,7 +307,7 @@ func (s *Service) TransitionFriends(ctx context.Context, actorID, peerID uuid.UU
 		)
 	}
 
-	peerPresence := s.onFriendAdded(ctx, actor, peer, newCh, actorMem, peerMem)
+	peerPresence := s.onFriendAdded(ctx, actorID, peer.ID, actor, peer, newCh, actorMem, peerMem)
 
 	return &TransitionResult{
 		Channel:      newCh,
@@ -444,19 +450,15 @@ func (s *Service) DisableByUserID(ctx context.Context, actorID, peerID uuid.UUID
 			return ErrUserNotFound()
 		}
 
-		/*
-			TODO: Hard delete relations with no channel id
-		*/
-
-		// if rel.ChannelID == nil {
-		// 	if err := s.repo.DeleteByUserID(txCtx, u1, u2, actorID); err != nil {
-		// 		return err
-		// 	}
-		// } else {
-		if err := s.repo.DeactivateByUserID(txCtx, u1, u2, actorID, now); err != nil {
-			return err
+		if rel.ChannelID == nil {
+			if err := s.repo.DeleteByUserID(txCtx, u1, u2, actorID); err != nil {
+				return err
+			}
+		} else {
+			if err := s.repo.DeactivateByUserID(txCtx, u1, u2, actorID, now); err != nil {
+				return err
+			}
 		}
-		// }
 
 		disabledRel = rel
 		return nil
@@ -594,6 +596,7 @@ func (s *Service) acceptPendingRelation(
 
 func (s *Service) onFriendAdded(
 	ctx context.Context,
+	actorID, prevActorID uuid.UUID,
 	actor, peer *user.User,
 	ch *channel.Channel,
 	actorMem, peerMem *channel.Member,
@@ -603,13 +606,14 @@ func (s *Service) onFriendAdded(
 	}
 
 	if s.cache != nil {
+		senderID, recipientID := resolvePendingPair(prevActorID, actorID, peer.ID)
 		cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), broadcastTimeout)
 		defer cancel()
 
-		if err := s.cache.HandleNewFriends(cacheCtx, actorMem.UserID, peer.ID, ch); err != nil {
+		if err := s.cache.HandleNewFriends(cacheCtx, senderID, recipientID, ch); err != nil {
 			slog.WarnContext(cacheCtx, "failed to handle relation cache invalidation",
 				slog.String("cache_type", "new_friends"),
-				slog.String("actor_id", actorMem.UserID.String()),
+				slog.String("actor_id", actorID.String()),
 				slog.String("peer_id", peer.ID.String()),
 				slog.String("channel_id", ch.ID.String()),
 				slog.Any("error", err),

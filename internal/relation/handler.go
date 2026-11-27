@@ -110,7 +110,7 @@ func (h *Handler) disableRelation(w http.ResponseWriter, r *http.Request) error 
 }
 
 type peerIDPath struct {
-	ID uuid.UUID `path:"id" validate:"required"`
+	ID string `path:"id" validate:"required"`
 }
 
 func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, err error) {
@@ -124,7 +124,12 @@ func (h *Handler) bindPeerRequest(r *http.Request) (actorID, peerID uuid.UUID, e
 		return uuid.Nil, uuid.Nil, err
 	}
 
-	return claims.UserID, path.ID, nil
+	parsedID, err := uuid.Parse(path.ID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, ErrIDInvalid().Wrap(err)
+	}
+
+	return claims.UserID, parsedID, nil
 }
 
 type transitionResponse struct {

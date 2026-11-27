@@ -45,6 +45,7 @@ func (app *Application) routes() http.Handler {
 
 			app.Handlers.Auth.RegisterAuthenticatedRoutes(auth)
 			app.Handlers.Bootstrap.RegisterRoutes(auth)
+			app.Handlers.Relation.RegisterRoutes(auth)
 			app.Handlers.User.RegisterRoutes(auth)
 			app.Handlers.Gateway.RegisterAuthenticatedRoutes(auth)
 		})

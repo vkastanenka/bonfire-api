@@ -444,9 +444,19 @@ func (s *Service) DisableByUserID(ctx context.Context, actorID, peerID uuid.UUID
 			return ErrUserNotFound()
 		}
 
+		/*
+			TODO: Hard delete relations with no channel id
+		*/
+
+		// if rel.ChannelID == nil {
+		// 	if err := s.repo.DeleteByUserID(txCtx, u1, u2, actorID); err != nil {
+		// 		return err
+		// 	}
+		// } else {
 		if err := s.repo.DeactivateByUserID(txCtx, u1, u2, actorID, now); err != nil {
 			return err
 		}
+		// }
 
 		disabledRel = rel
 		return nil

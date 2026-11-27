@@ -31,8 +31,8 @@ func ErrIDGenerateFailed() *errs.Error {
 		Reason("ID_GENERATE_FAILED")
 }
 
-func ErrPeerIDInvalid() *errs.Error {
-	return errs.InvalidArgument("Invalid peer ID format.").
+func ErrIDInvalid() *errs.Error {
+	return errs.InvalidArgument("Invalid ID format.").
 		FieldViolation("id", "Invalid ID.", "ID_INVALID")
 }
 
